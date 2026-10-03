@@ -133,7 +133,7 @@ test('order status notification embed includes the order status and details', ()
   );
 });
 
-test('new order embed shows Noted status and Served by label', () => {
+test('new order embed keeps ticket owner and assigned supporter in the correct labels', () => {
   const embed = orderEmbed({
     id: 'ORDER-2',
     status: 'pending',
@@ -148,7 +148,21 @@ test('new order embed shows Noted status and Served by label', () => {
   }).toJSON();
 
   assert.equal(embed.fields.find((field) => field.name === 'Status').value, 'Noted');
+  assert.match(embed.description, /\*\*Customer By:\*\* <@customer-1>/);
   assert.match(embed.description, /\*\*Served by:\*\* <@staff-1>/);
+
+  const missingOwnerEmbed = orderEmbed({
+    id: 'ORDER-3',
+    status: 'pending',
+    processingStatus: 'not_yet',
+    items: 'Tea',
+    quantity: 2,
+    paymentMethod: 'GCASH',
+    sourceChannelId: 'source-2',
+    createdAt: new Date().toISOString(),
+  }).toJSON();
+  assert.match(missingOwnerEmbed.description, /\*\*Customer By:\*\* Unknown customer/);
+  assert.match(missingOwnerEmbed.description, /\*\*Served by:\*\* Not assigned/);
 });
 
 test('vouches persist and are counted only for the requested user and server', () => {

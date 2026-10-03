@@ -12,7 +12,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 
 ## Commands
 
-- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only and posts the selected supporter as **Served by** in the order embed. When run inside an order ticket, its submitted product is used as the visible order reference; otherwise the UUID is shown. New orders show **Noted** until the configured owner role presses **Processing**.
+- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only. The **Customer By** field is the ticket owner when the command is run inside a ticket; otherwise it falls back to the staff member who submitted the order. The **Served by** field is the staff member assisting the buyer or commanding the order. When run inside an order ticket, its submitted product is used as the visible order reference; otherwise the UUID is shown. New orders show **Noted** until the configured owner role presses **Processing**.
 - When an order is marked **Processing**, **Complete**, or **Cancelled**, the bot sends a status-update embed both to the channel where `/order` was run and by DM to the order submitter.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.

@@ -3,6 +3,10 @@ function ticketOwnerId(channel) {
   return channel.topic.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/)?.[1] ?? null;
 }
 
+function ticketCustomerId(channel, fallbackUserId) {
+  return ticketOwnerId(channel) ?? fallbackUserId;
+}
+
 async function ticketProduct(channel) {
   if (!channel?.topic?.match(/(?:^|;)ticket-type:order(?:;|$)/)) return null;
   const topicProduct = channel.topic.match(/(?:^|;)ticket-product:([^;]+)(?:;|$)/)?.[1];
@@ -17,4 +21,4 @@ async function ticketProduct(channel) {
   return null;
 }
 
-module.exports = { ticketOwnerId, ticketProduct };
+module.exports = { ticketOwnerId, ticketCustomerId, ticketProduct };

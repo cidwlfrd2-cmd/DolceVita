@@ -33,7 +33,7 @@ const {
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
-const { ticketOwnerId, ticketProduct } = require('./ticket-context');
+const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('./ticket-context');
 const { orderReference } = require('./order-reference');
 const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
 const {
@@ -480,9 +480,10 @@ async function handleCommand(interaction) {
       return interaction.reply({ content: 'The order channel has not been set up yet. Ask an administrator to run `/setorder channel:#channel`.', ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
+    const customerId = ticketCustomerId(interaction.channel, interaction.user.id);
     const order = store.addOrder({
       guildId: interaction.guildId,
-      customerId: interaction.user.id,
+      customerId,
       sourceChannelId: interaction.channelId,
       items: interaction.options.getString('items', true),
       paymentMethod: interaction.options.getString('payment_method', true),

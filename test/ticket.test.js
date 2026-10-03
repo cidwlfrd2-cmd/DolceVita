@@ -18,7 +18,7 @@ const {
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
-const { ticketOwnerId, ticketProduct } = require('../src/ticket-context');
+const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('../src/ticket-context');
 const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
@@ -235,6 +235,12 @@ test('ticket owner lookup only recognizes active ticket topics', () => {
   assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678' }), null);
   assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678;ticket-type:unknown' }), null);
   assert.equal(ticketOwnerId(null), null);
+});
+
+test('orders in tickets use the ticket owner as the customer', () => {
+  const channel = { topic: 'ticket-owner:123456789012345678;ticket-type:order' };
+  assert.equal(ticketCustomerId(channel, '987654321098765432'), '123456789012345678');
+  assert.equal(ticketCustomerId({ topic: null }, '987654321098765432'), '987654321098765432');
 });
 
 test('order ticket product comes from the topic or the original ticket embed', async () => {
