@@ -16,6 +16,9 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };
   }
+  if (normalizedCommand === ',setorder') {
+    return { name: 'setorder', args };
+  }
   if (normalizedCommand === ',setvoided') {
     return { name: 'set_voided', args };
   }

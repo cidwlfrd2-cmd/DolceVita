@@ -197,6 +197,7 @@ function helpEmbed(commands) {
   lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
   lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
+  lines.push('**,setorder <channel_id>** — Set the channel for new orders (administrator only).');
   lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
   lines.push('**,setvoided <channel id>** — Set the voided-order alert channel (administrator only).');
   lines.push('**,setvoidedrole <role_id>** — Set the role granted to members marked as voided (administrator only).');
@@ -213,7 +214,7 @@ function ticketPanelButtons() {
     new ButtonBuilder()
       .setCustomId('ticket:order')
       .setLabel('order')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('ticket:report')
       .setLabel('report')

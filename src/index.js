@@ -36,7 +36,11 @@ const { ticketChannelName } = require('./ticket-names');
 const { ticketOwnerId, ticketProduct } = require('./ticket-context');
 const { orderReference } = require('./order-reference');
 const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
-const { ticketAccessRoleIds, ticketManagerRoleIds } = require('./ticket-permissions');
+const {
+  ticketAccessRoleIds,
+  ticketManagerRoleIds,
+  ticketManagerMentionPayload,
+} = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { parseOrderTicketForm } = require('./order-ticket-form');
 const { multiplyAmounts } = require('./multiplication');
@@ -339,9 +343,9 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       reason: `${type} ticket opened by ${interaction.user.tag}`,
     });
     await channel.send({
+      ...ticketManagerMentionPayload(settings),
       embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
       components: [ticketButtons()],
-      allowedMentions: { parse: [] },
     });
     return { channel, created: true };
   });
@@ -1017,6 +1021,30 @@ client.on('messageCreate', async (message) => {
       }
       store.setSettings(message.guild.id, { voidedChannelId: channel.id });
       await message.reply(`Voided-order alerts will be posted in ${channel}.`);
+      return;
+    }
+    if (messageCommand?.name === 'setorder') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can set the order channel.');
+        return;
+      }
+      if (messageCommand.args.length !== 1) {
+        await message.reply('Usage: `,setorder <channel_id>`');
+        return;
+      }
+      let channel;
+      try {
+        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
+      } catch (error) {
+        await message.reply(error.message);
+        return;
+      }
+      if (!channel.isTextBased() || typeof channel.send !== 'function') {
+        await message.reply('That ID is not a sendable text channel in this server.');
+        return;
+      }
+      store.setSettings(message.guild.id, { orderChannelId: channel.id });
+      await message.reply(`New orders will be posted in ${channel}.`);
       return;
     }
     if (messageCommand?.name === 'set_role_voided') {

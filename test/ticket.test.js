@@ -22,17 +22,21 @@ const { ticketOwnerId, ticketProduct } = require('../src/ticket-context');
 const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
-const { ticketAccessRoleIds, ticketManagerRoleIds } = require('../src/ticket-permissions');
+const {
+  ticketAccessRoleIds,
+  ticketManagerRoleIds,
+  ticketManagerMentionPayload,
+} = require('../src/ticket-permissions');
 const { voidedOrderEmbed } = require('../src/embeds');
 const { parseOrderTicketForm } = require('../src/order-ticket-form');
 const { multiplyAmounts } = require('../src/multiplication');
 const { replyThenDeleteCommand } = require('../src/message-command-actions');
 
 test('ticket panel contains only the three requested buttons', () => {
-  assert.deepEqual(
-    ticketPanelButtons().toJSON().components.map((button) => button.label),
-    ['order', 'report', 'others'],
-  );
+  const buttons = ticketPanelButtons().toJSON().components;
+  assert.deepEqual(buttons.map((button) => button.label), ['order', 'report', 'others']);
+  assert.equal(buttons[0].style, buttons[1].style);
+  assert.equal(buttons[0].style, buttons[2].style);
 });
 
 test('order ticket modal requires the product, quantity, and payment method fields', () => {
@@ -198,6 +202,20 @@ test('only configured /setadmin and /setowner roles can claim or close tickets',
     ownerRoleId: 'owner',
   }), ['admin', 'owner']);
   assert.deepEqual(ticketManagerRoleIds({ ticketStaffRoleId: 'ticket-staff' }), []);
+});
+
+test('new tickets mention only the configured /setadmin and /setowner roles', () => {
+  assert.deepEqual(ticketManagerMentionPayload({
+    ticketStaffRoleId: 'ticket-staff',
+    adminRoleId: 'admin',
+    ownerRoleId: 'owner',
+  }), {
+    content: '<@&admin> <@&owner>',
+    allowedMentions: { roles: ['admin', 'owner'] },
+  });
+  assert.deepEqual(ticketManagerMentionPayload({}), {
+    allowedMentions: { roles: [] },
+  });
 });
 
 test('ticket channel names include type, submitted form answer, and username', () => {
@@ -372,6 +390,10 @@ test('completed order reminder embed has no title and the warranty policy descri
 });
 
 test('message command parser recognizes the voided channel and role shortcuts', () => {
+  assert.deepEqual(parseTicketMessageCommand(',setorder 123456789012345678'), {
+    name: 'setorder',
+    args: ['123456789012345678'],
+  });
   assert.deepEqual(parseTicketMessageCommand(',setvoided 1234567890'), {
     name: 'set_voided',
     args: ['1234567890'],
@@ -517,6 +539,7 @@ test('help command lists registered commands, subcommands, and message shortcuts
     ',help',
     '/setupticketcategory',
     ',setupticketcategory',
+    ',setorder <channel_id>',
     ',set ticket_transcript',
     ',setvoided <channel id>',
     ',setvoidedrole <role_id>',
