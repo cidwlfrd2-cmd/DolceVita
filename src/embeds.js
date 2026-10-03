@@ -114,6 +114,7 @@ function orderCompletionReminderEmbed() {
       '› All completed orders come with a 12-hours warranty.',
       '› Replacements will only be provided for verified issues covered by warranty.',
       '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
+      '› NO VOUCH = no refund, no replacement & no warranty.',
     ].join('\n'));
 }
 
