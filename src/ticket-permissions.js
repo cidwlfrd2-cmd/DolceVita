@@ -10,6 +10,10 @@ function ticketManagerRoleIds(settings) {
   return [...new Set([settings?.adminRoleId, settings?.ownerRoleId].filter(Boolean))];
 }
 
+function hasTicketManagerRole(settings, memberHasRole) {
+  return ticketManagerRoleIds(settings).some(memberHasRole);
+}
+
 function ticketManagerMentionPayload(settings) {
   const roleIds = ticketManagerRoleIds(settings);
   return {
@@ -18,4 +22,9 @@ function ticketManagerMentionPayload(settings) {
   };
 }
 
-module.exports = { ticketAccessRoleIds, ticketManagerRoleIds, ticketManagerMentionPayload };
+module.exports = {
+  ticketAccessRoleIds,
+  ticketManagerRoleIds,
+  hasTicketManagerRole,
+  ticketManagerMentionPayload,
+};

@@ -53,18 +53,18 @@ module.exports = [
         .setRequired(true))),
   new SlashCommandBuilder()
     .setName('setowner')
-    .setDescription('Choose the role allowed to manage order buttons.')
+    .setDescription('Choose the role allowed to manage orders and close tickets.')
     .addRoleOption((option) => option
       .setName('role')
-      .setDescription('Role allowed to process, complete, and cancel orders')
+      .setDescription('Role allowed to process, complete, cancel orders, and close tickets')
       .setRequired(true)),
   new SlashCommandBuilder()
     .setName('setadmin')
-    .setDescription('Choose the role allowed to use order commands.')
+    .setDescription('Choose the role allowed to use order commands and close tickets.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addRoleOption((option) => option
       .setName('role')
-      .setDescription('Role allowed to submit and claim orders')
+      .setDescription('Role allowed to submit, claim orders, and close tickets')
       .setRequired(true)),
   new SlashCommandBuilder()
     .setName('setorder')

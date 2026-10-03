@@ -39,6 +39,7 @@ const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation'
 const {
   ticketAccessRoleIds,
   ticketManagerRoleIds,
+  hasTicketManagerRole,
   ticketManagerMentionPayload,
 } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
@@ -766,11 +767,8 @@ async function handleTicketButton(interaction) {
       return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
-    const managerRoleIds = ticketManagerRoleIds(settings);
-    const canClose = interaction.user.id !== ownerId
-      && managerRoleIds.some((roleId) => memberHasRole(interaction, roleId));
-    if (!canClose) {
-      return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
+    if (!hasTicketManagerRole(settings, (roleId) => memberHasRole(interaction, roleId))) {
+      return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can close tickets.', ephemeral: true });
     }
     return closeTicketChannel(interaction, channel, ownerId);
   }
