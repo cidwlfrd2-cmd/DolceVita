@@ -17,8 +17,18 @@ test('proof collage combines one to five images into a single PNG', async () => 
     const metadata = await sharp(collage).metadata();
 
     assert.equal(metadata.format, 'png');
-    assert.equal(metadata.width, count === 1 ? 672 : 1328);
-    assert.equal(metadata.height, 16 + Math.ceil(count / 2) * 436);
+    assert.equal(metadata.width, 672);
+    assert.equal(metadata.height, 16 + count * 436);
+    const cornerPixel = await sharp(collage).extract({ left: 0, top: 0, width: 1, height: 1 }).removeAlpha().raw().toBuffer();
+    assert.deepEqual([...cornerPixel], [0, 0, 0]);
+    for (let index = 0; index < count; index += 1) {
+      const imagePixel = await sharp(collage)
+        .extract({ left: 100, top: 226 + index * 436, width: 1, height: 1 })
+        .removeAlpha()
+        .raw()
+        .toBuffer();
+      assert.deepEqual([...imagePixel], [20 * index, 100, 180]);
+    }
   }
 });
 

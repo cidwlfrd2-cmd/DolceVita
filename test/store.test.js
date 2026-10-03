@@ -74,6 +74,24 @@ test('completed and cancelled statuses override processing in the order embed', 
   assert.equal(cancelledEmbed.fields.find((field) => field.name === 'Status').value, 'Cancelled');
 });
 
+test('new order embed shows Noted status and Served by label', () => {
+  const embed = orderEmbed({
+    id: 'ORDER-2',
+    status: 'pending',
+    processingStatus: 'not_yet',
+    items: 'Coffee',
+    quantity: 1,
+    customerId: 'customer-1',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    sourceChannelId: 'source-1',
+    createdAt: new Date().toISOString(),
+  }).toJSON();
+
+  assert.equal(embed.fields.find((field) => field.name === 'Status').value, 'Noted');
+  assert.match(embed.description, /\*\*Served by:\*\* <@staff-1>/);
+});
+
 test('vouches persist and are counted only for the requested user and server', () => {
   const store = createStore();
   store.addVouch({ guildId: 'guild-1', userId: 'user-1', items: 'Latte' });

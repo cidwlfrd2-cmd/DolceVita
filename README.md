@@ -5,14 +5,14 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 ## Setup
 
 1. Install Node.js 20 or newer, then run `npm install`.
-2. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Enable the `bot` and `applications.commands` scopes in its server install link. The bot needs permission to view and send messages, embed links, and use application commands in the order channel.
+2. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Enable the `bot` and `applications.commands` scopes in its server install link. The bot needs permission to view and send messages, embed links, manage channels and roles for private tickets, and use application commands.
 3. Copy `.env.example` to `.env`, then fill in the bot token and application client ID. Set `DISCORD_GUILD_ID` to register commands immediately in one server while testing; leave it blank for global registration.
 4. Run `npm run deploy`, invite the bot to your server, and start it with `npm start`.
 5. An administrator runs `/setup channel:#orders`. Optionally choose a staff role; without one, staff actions require the Discord `Manage Messages` permission.
 
 ## Commands
 
-- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only and posts the selected supporter in the order embed. New orders show **Not yet** until the configured owner role presses **Processing**.
+- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only and posts the selected supporter as **Served by** in the order embed. New orders show **Noted** until the configured owner role presses **Processing**.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.

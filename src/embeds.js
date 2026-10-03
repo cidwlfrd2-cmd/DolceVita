@@ -16,10 +16,10 @@ function orderEmbed(order) {
     ? 'Completed'
     : order.status === 'cancelled'
       ? 'Cancelled'
-      : order.processingStatus === 'processing' ? 'Processing' : 'Not yet';
+        : order.processingStatus === 'processing' ? 'Processing' : 'Noted';
   const embed = new EmbedBuilder()
     .setColor(COLORS[order.status])
-    .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer:** <@${order.customerId}>\n**Supporter:** ${order.supporterId ? `<@${order.supporterId}>` : 'Not assigned'}\n**Order submitted in:** ${order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel'}`)
+    .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer:** <@${order.customerId}>\n**Served by:** ${order.supporterId ? `<@${order.supporterId}>` : 'Not assigned'}\n**Order submitted in:** ${order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel'}`)
     .addFields({
       name: 'Status',
       value: status,

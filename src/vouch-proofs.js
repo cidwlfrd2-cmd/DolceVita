@@ -9,8 +9,8 @@ async function createProofCollage(imageBuffers) {
     throw new RangeError('A proof collage requires between one and five images.');
   }
 
-  const columns = Math.min(imageBuffers.length, 2);
-  const rows = Math.ceil(imageBuffers.length / columns);
+  const columns = 1;
+  const rows = imageBuffers.length;
   const composites = [];
 
   for (let index = 0; index < imageBuffers.length; index += 1) {
@@ -18,7 +18,7 @@ async function createProofCollage(imageBuffers) {
       .rotate()
       .resize(TILE_WIDTH, TILE_HEIGHT, {
         fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 },
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
       })
       .png()
       .toBuffer();
@@ -34,7 +34,7 @@ async function createProofCollage(imageBuffers) {
       width: GUTTER + columns * (TILE_WIDTH + GUTTER),
       height: GUTTER + rows * (TILE_HEIGHT + GUTTER),
       channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 },
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
     },
   })
     .composite(composites)
