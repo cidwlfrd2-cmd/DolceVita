@@ -384,6 +384,16 @@ async function handleCommand(interaction) {
     });
   }
 
+  if (interaction.commandName === 'solving') {
+    const amountOne = interaction.options.getNumber('amount_one', true);
+    const amountTwo = interaction.options.getNumber('amount_two', true);
+    const product = amountOne * amountTwo;
+    if (!Number.isFinite(product)) {
+      return interaction.reply({ content: 'The result is too large to calculate.', ephemeral: true });
+    }
+    return interaction.reply(`**${amountOne} × ${amountTwo} = ${product}**`);
+  }
+
   if (interaction.commandName === 'claim') {
     if (!isOrderStaff(interaction)) {
       return interaction.reply({ content: 'You do not have permission to claim orders.', ephemeral: true });

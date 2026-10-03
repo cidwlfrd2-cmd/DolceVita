@@ -89,6 +89,17 @@ module.exports = [
     .setName('claim')
     .setDescription('Claim the next waiting order.'),
   new SlashCommandBuilder()
+    .setName('solving')
+    .setDescription('Multiply two numbers.')
+    .addNumberOption((option) => option
+      .setName('amount_one')
+      .setDescription('First amount')
+      .setRequired(true))
+    .addNumberOption((option) => option
+      .setName('amount_two')
+      .setDescription('Second amount')
+      .setRequired(true)),
+  new SlashCommandBuilder()
     .setName('message')
     .setDescription('Post a message as the bot.')
     .addStringOption((option) => option

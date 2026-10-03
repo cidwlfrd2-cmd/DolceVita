@@ -165,6 +165,18 @@ test('ticket setup is registered as an administrator subcommand', () => {
   assert.equal(ticketCommand.default_member_permissions, '8');
 });
 
+test('/solving is registered with two required numeric amounts', () => {
+  const command = commands.find((entry) => entry.name === 'solving');
+  assert.ok(command);
+  assert.deepEqual(
+    command.options.map(({ name, type, required }) => ({ name, type, required })),
+    [
+      { name: 'amount_one', type: 10, required: true },
+      { name: 'amount_two', type: 10, required: true },
+    ],
+  );
+});
+
 test('ticketsetup shortcut is registered as an administrator command', () => {
   const shortcut = commands.find((command) => command.name === 'ticketsetup');
   assert.ok(shortcut);
@@ -207,6 +219,7 @@ test('help command lists registered commands, subcommands, and message shortcuts
   for (const commandText of [
     '/help',
     '/setup',
+    '/solving',
     '/set vouch',
     '/set ticket_transcript',
     '/ticket setup',
