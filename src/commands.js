@@ -33,6 +33,14 @@ module.exports = [
       .setDescription('Role allowed to process, complete, and cancel orders')
       .setRequired(true)),
   new SlashCommandBuilder()
+    .setName('setadmin')
+    .setDescription('Choose the role allowed to use order commands.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addRoleOption((option) => option
+      .setName('role')
+      .setDescription('Role allowed to submit and claim orders')
+      .setRequired(true)),
+  new SlashCommandBuilder()
     .setName('order')
     .setDescription('Submit an order to the public queue.')
     .addStringOption((option) => option

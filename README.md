@@ -21,6 +21,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/checkvouch user:<optional>` displays a user's total vouches and their vouch dates/items. Omit the user to check your own history.
 - `/stickymessage set text:<message> channel:<optional>` keeps a message at the bottom of the chosen channel by reposting it after each new message. `/stickymessage remove channel:<optional>` clears it. Both actions require staff access.
 - `/setowner role:<role>` can only be run by the server owner. The selected role and server owner can use **Processing**, **Complete**, and **Cancel** buttons. Closed orders leave the active queue.
+- `/setadmin role:<role>` can be run by a server administrator and grants the selected role access to `/order` and `/claim`.
 - `/setup channel:<channel> staff_role:<optional>` changes the public order channel and staff role.
 
 Order and server setup data are stored in `data/orders.json` on disk. Back up that file to preserve the queue between deployments.

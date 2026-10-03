@@ -14,28 +14,36 @@ const store = new OrderStore();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 const stickyRefreshes = new Map();
 
+function memberHasRole(interaction, roleId) {
+  const roles = interaction.member?.roles;
+  return Array.isArray(roles)
+    ? roles.includes(roleId)
+    : roles?.cache?.has(roleId) ?? false;
+}
+
 function isStaff(interaction) {
   const settings = store.getSettings(interaction.guildId);
-  const roles = interaction.member?.roles;
-  const hasRole = (roleId) => (Array.isArray(roles)
-    ? roles.includes(roleId)
-    : roles?.cache?.has(roleId) ?? false);
   const staffRoleIds = [settings?.staffRoleId, settings?.ownerRoleId].filter(Boolean);
   if (staffRoleIds.length) {
-    return staffRoleIds.some(hasRole)
+    return staffRoleIds.some((roleId) => memberHasRole(interaction, roleId))
       || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
   }
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages) ?? false;
 }
 
+function isOrderStaff(interaction) {
+  const settings = store.getSettings(interaction.guildId);
+  const orderRoleIds = [settings?.adminRoleId, settings?.staffRoleId, settings?.ownerRoleId].filter(Boolean);
+  if (!orderRoleIds.length) return isStaff(interaction);
+  return orderRoleIds.some((roleId) => memberHasRole(interaction, roleId))
+    || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
+}
+
 function canUseOrderButtons(interaction) {
   const settings = store.getSettings(interaction.guildId);
   if (!settings?.ownerRoleId) return isStaff(interaction);
-  const roles = interaction.member?.roles;
-  const hasOwnerRole = Array.isArray(roles)
-    ? roles.includes(settings.ownerRoleId)
-    : roles?.cache?.has(settings.ownerRoleId) ?? false;
-  return interaction.guild?.ownerId === interaction.user.id || hasOwnerRole;
+  return interaction.guild?.ownerId === interaction.user.id
+    || memberHasRole(interaction, settings.ownerRoleId);
 }
 
 async function refreshOrderMessage(order) {
@@ -114,8 +122,17 @@ async function handleCommand(interaction) {
     return interaction.reply({ content: `${role} and the server owner can now use order buttons.`, ephemeral: true });
   }
 
+  if (interaction.commandName === 'setadmin') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only a server administrator can set the order role.', ephemeral: true });
+    }
+    const role = interaction.options.getRole('role', true);
+    store.setSettings(interaction.guildId, { adminRoleId: role.id });
+    return interaction.reply({ content: `${role} can now use /order and /claim.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'order') {
-    if (!isStaff(interaction)) {
+    if (!isOrderStaff(interaction)) {
       return interaction.reply({ content: 'Only staff can submit orders.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
@@ -150,7 +167,7 @@ async function handleCommand(interaction) {
   }
 
   if (interaction.commandName === 'claim') {
-    if (!isStaff(interaction)) {
+    if (!isOrderStaff(interaction)) {
       return interaction.reply({ content: 'You do not have permission to claim orders.', ephemeral: true });
     }
     const order = store.claimNext(interaction.guildId, interaction.user.id);

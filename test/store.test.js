@@ -28,6 +28,8 @@ test('orders persist, can be claimed in order, and leave the active queue when f
   assert.equal(restartedStore.getSettings('guild-1').vouchChannelId, 'vouch-channel');
   restartedStore.setSettings('guild-1', { ownerRoleId: 'order-owner-role' });
   assert.equal(restartedStore.getSettings('guild-1').ownerRoleId, 'order-owner-role');
+  restartedStore.setSettings('guild-1', { adminRoleId: 'order-admin-role' });
+  assert.equal(restartedStore.getSettings('guild-1').adminRoleId, 'order-admin-role');
   assert.deepEqual(restartedStore.listActive('guild-1').map((order) => order.id), [first.id, second.id]);
   assert.equal(restartedStore.getOrder(first.id).processingStatus, 'not_yet');
   assert.equal(restartedStore.getOrder(first.id).supporterId, 'staff-1');
