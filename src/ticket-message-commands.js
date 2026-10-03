@@ -19,7 +19,7 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',setvoided') {
     return { name: 'set_voided', args };
   }
-  if (normalizedCommand === ',setrolevoided') {
+  if (normalizedCommand === ',setvoidedrole' || normalizedCommand === ',setrolevoided') {
     return { name: 'set_role_voided', args };
   }
   if (normalizedCommand === ',set' && args[0]?.toLowerCase() === 'ticket_transcript') {

@@ -376,6 +376,10 @@ test('message command parser recognizes the voided channel and role shortcuts', 
     name: 'set_voided',
     args: ['1234567890'],
   });
+  assert.deepEqual(parseTicketMessageCommand(',setvoidedrole 9876543210'), {
+    name: 'set_role_voided',
+    args: ['9876543210'],
+  });
   assert.deepEqual(parseTicketMessageCommand(',setrolevoided 9876543210'), {
     name: 'set_role_voided',
     args: ['9876543210'],
@@ -503,6 +507,8 @@ test('help command lists registered commands, subcommands, and message shortcuts
     ',solving <number> <number>',
     '/set vouch',
     '/set ticket_transcript',
+    '/set voided',
+    '/set voided_role',
     '/ticket setup',
     '/ticketsetup',
     '/stickymessage set',
@@ -512,6 +518,8 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/setupticketcategory',
     ',setupticketcategory',
     ',set ticket_transcript',
+    ',setvoided <channel id>',
+    ',setvoidedrole <role_id>',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }

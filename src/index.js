@@ -1025,7 +1025,7 @@ client.on('messageCreate', async (message) => {
         return;
       }
       if (messageCommand.args.length !== 1) {
-        await message.reply('Usage: `,setrolevoided <role id>`');
+        await message.reply('Usage: `,setvoidedrole <role_id>`');
         return;
       }
       const role = message.guild.roles.cache.get(messageCommand.args[0]) ?? await message.guild.roles.fetch(messageCommand.args[0]).catch(() => null);

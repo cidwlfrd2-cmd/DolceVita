@@ -198,6 +198,8 @@ function helpEmbed(commands) {
   lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
   lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
+  lines.push('**,setvoided <channel id>** — Set the voided-order alert channel (administrator only).');
+  lines.push('**,setvoidedrole <role_id>** — Set the role granted to members marked as voided (administrator only).');
   lines.push('**,help** — Show this command list.');
 
   return new EmbedBuilder()
