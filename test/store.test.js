@@ -13,8 +13,8 @@ function createStore() {
 test('orders persist, can be claimed in order, and leave the active queue when finished', () => {
   const store = createStore();
   store.setSettings('guild-1', { channelId: 'channel-1', staffRoleId: null });
-  const first = store.addOrder({ guildId: 'guild-1', customerId: 'user-1', items: 'Latte', paymentMethod: 'Card', supporterId: 'staff-1', quantity: 2, details: '' });
-  const second = store.addOrder({ guildId: 'guild-1', customerId: 'user-2', items: 'Tea', paymentMethod: 'Cash', supporterId: 'staff-2', quantity: 1, details: null });
+  const first = store.addOrder({ guildId: 'guild-1', customerId: 'user-1', sourceChannelId: 'source-1', items: 'Latte', paymentMethod: 'Card', supporterId: 'staff-1', quantity: 2, details: '' });
+  const second = store.addOrder({ guildId: 'guild-1', customerId: 'user-2', sourceChannelId: 'source-2', items: 'Tea', paymentMethod: 'Cash', supporterId: 'staff-2', quantity: 1, details: null });
 
   const restartedStore = new OrderStore(store.filePath);
   assert.equal(restartedStore.getSettings('guild-1').channelId, 'channel-1');
@@ -30,9 +30,12 @@ test('orders persist, can be claimed in order, and leave the active queue when f
   assert.equal(restartedStore.getSettings('guild-1').ownerRoleId, 'order-owner-role');
   restartedStore.setSettings('guild-1', { adminRoleId: 'order-admin-role' });
   assert.equal(restartedStore.getSettings('guild-1').adminRoleId, 'order-admin-role');
+  restartedStore.setSettings('guild-1', { orderChannelId: 'orders-channel' });
+  assert.equal(restartedStore.getSettings('guild-1').orderChannelId, 'orders-channel');
   assert.deepEqual(restartedStore.listActive('guild-1').map((order) => order.id), [first.id, second.id]);
   assert.equal(restartedStore.getOrder(first.id).processingStatus, 'not_yet');
   assert.equal(restartedStore.getOrder(first.id).supporterId, 'staff-1');
+  assert.equal(restartedStore.getOrder(first.id).sourceChannelId, 'source-1');
   assert.equal(restartedStore.claimNext('guild-1', 'staff-1').id, first.id);
   assert.equal(restartedStore.finishOrder(first.id, 'completed').status, 'completed');
   assert.deepEqual(restartedStore.listActive('guild-1').map((order) => order.id), [second.id]);

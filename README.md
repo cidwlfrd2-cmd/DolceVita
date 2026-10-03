@@ -17,11 +17,12 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
-- `/vouch items:<items> feedback:<feedback> proof:<image> proof2:<image> ...` posts a public embed showing the items, feedback, and submitter's name, with up to five optional proof images.
+- `/vouch items:<items> feedback:<feedback> proof:<image> proof2:<image> ...` posts one public embed showing the items, feedback, submitter's name, and up to five proof images (first image preview plus links to all proofs).
 - `/checkvouch user:<optional>` displays a user's total vouches and their vouch dates/items. Omit the user to check your own history.
 - `/stickymessage set text:<message> channel:<optional>` keeps a message at the bottom of the chosen channel by reposting it after each new message. `/stickymessage remove channel:<optional>` clears it. Both actions require staff access.
 - `/setowner role:<role>` can only be run by the server owner. The selected role and server owner can use **Processing**, **Complete**, and **Cancel** buttons. Closed orders leave the active queue.
 - `/setadmin role:<role>` can be run by a server administrator and grants the selected role access to `/order` and `/claim`.
+- `/setorder channel:#orders` can be run by a server administrator to choose where new order embeds are posted. Each order also shows the channel where `/order` was submitted.
 - `/setup channel:<channel> staff_role:<optional>` changes the public order channel and staff role.
 
 Order and server setup data are stored in `data/orders.json` on disk. Back up that file to preserve the queue between deployments.

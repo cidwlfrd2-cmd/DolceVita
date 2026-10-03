@@ -77,12 +77,13 @@ class OrderStore {
     return stickyMessage;
   }
 
-  addOrder({ guildId, customerId, items, paymentMethod, supporterId, quantity, details }) {
+  addOrder({ guildId, customerId, sourceChannelId, items, paymentMethod, supporterId, quantity, details }) {
     const state = this.read();
     const order = {
       id: randomUUID().toUpperCase(),
       guildId,
       customerId,
+      sourceChannelId,
       items,
       paymentMethod,
       supporterId,

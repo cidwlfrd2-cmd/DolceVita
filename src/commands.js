@@ -41,6 +41,15 @@ module.exports = [
       .setDescription('Role allowed to submit and claim orders')
       .setRequired(true)),
   new SlashCommandBuilder()
+    .setName('setorder')
+    .setDescription('Choose where order embeds are posted.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addChannelOption((option) => option
+      .setName('channel')
+      .setDescription('Channel where new orders will be sent')
+      .setRequired(true)
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+  new SlashCommandBuilder()
     .setName('order')
     .setDescription('Submit an order to the public queue.')
     .addStringOption((option) => option

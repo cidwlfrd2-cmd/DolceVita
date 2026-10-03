@@ -7,7 +7,7 @@ function orderEmbed(order) {
   const embed = new EmbedBuilder()
     .setColor(COLORS[order.status])
     .setTitle(`Order #${order.id}`)
-    .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer:** <@${order.customerId}>\n**Supporter:** ${order.supporterId ? `<@${order.supporterId}>` : 'Not assigned'}`)
+    .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer:** <@${order.customerId}>\n**Supporter:** ${order.supporterId ? `<@${order.supporterId}>` : 'Not assigned'}\n**Order submitted in:** ${order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel'}`)
     .addFields({
       name: 'Status',
       value: order.processingStatus === 'processing' ? 'Processing' : 'Not yet',

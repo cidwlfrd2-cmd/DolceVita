@@ -131,6 +131,15 @@ async function handleCommand(interaction) {
     return interaction.reply({ content: `${role} can now use /order and /claim.`, ephemeral: true });
   }
 
+  if (interaction.commandName === 'setorder') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only a server administrator can set the order channel.', ephemeral: true });
+    }
+    const channel = interaction.options.getChannel('channel', true);
+    store.setSettings(interaction.guildId, { orderChannelId: channel.id });
+    return interaction.reply({ content: `New orders will be posted in ${channel}.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'order') {
     if (!isOrderStaff(interaction)) {
       return interaction.reply({ content: 'Only staff can submit orders.', ephemeral: true });
@@ -139,17 +148,22 @@ async function handleCommand(interaction) {
     if (!settings) {
       return interaction.reply({ content: 'The order channel has not been set up yet. Ask an administrator to run `/setup`.', ephemeral: true });
     }
+    const orderChannelId = settings.orderChannelId ?? settings.channelId;
+    if (!orderChannelId) {
+      return interaction.reply({ content: 'The order channel has not been set up yet. Ask an administrator to run `/setorder channel:#channel`.', ephemeral: true });
+    }
     await interaction.deferReply({ ephemeral: true });
     const order = store.addOrder({
       guildId: interaction.guildId,
       customerId: interaction.user.id,
+      sourceChannelId: interaction.channelId,
       items: interaction.options.getString('items', true),
       paymentMethod: interaction.options.getString('payment_method', true),
       supporterId: interaction.options.getUser('supporter', true).id,
       quantity: interaction.options.getInteger('quantity') ?? 1,
       details: interaction.options.getString('details'),
     });
-    const channel = await client.channels.fetch(settings.channelId);
+    const channel = await client.channels.fetch(orderChannelId);
     const message = await channel.send({
       embeds: [orderEmbed(order)],
       components: [orderButtons(order)],
@@ -221,21 +235,22 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ ephemeral: true });
     const channel = await client.channels.fetch(settings.vouchChannelId);
+    const proofLinks = proofs.map((attachment, index) => `[Proof ${index + 1}](${attachment.url})`);
     const embed = new EmbedBuilder()
       .setColor(0x35a16b)
       .setTitle('Customer Vouch')
-      .setDescription(`<@${interaction.user.id}> vouched for Dolce Vita, tysm! drop by the den again!`)
+      .setDescription([
+        `<@${interaction.user.id}> vouched for Dolce Vita, tysm! drop by the den again!`,
+        ...(proofLinks.length ? ['', '**Proof images**', proofLinks.join(' · ')] : []),
+      ].join('\n'))
       .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
       .addFields(
         { name: 'Items', value: items },
         { name: 'Feedback', value: feedback },
       )
       .setTimestamp();
-    const proofEmbeds = proofs.map((attachment, index) => new EmbedBuilder()
-      .setColor(0x35a16b)
-      .setTitle(`Proof ${index + 1}`)
-      .setImage(attachment.url));
-    await channel.send({ embeds: [embed, ...proofEmbeds], allowedMentions: { parse: [] } });
+    if (proofs.length) embed.setImage(proofs[0].url);
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
     store.addVouch({ guildId: interaction.guildId, userId: interaction.user.id, items });
     return interaction.editReply(`Your vouch was posted in ${channel}.`);
   }
