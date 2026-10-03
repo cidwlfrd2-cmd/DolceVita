@@ -8,6 +8,7 @@ const {
 } = require('discord.js');
 const { OrderStore } = require('./store');
 const { orderButtons, orderEmbed, queueEmbed } = require('./embeds');
+const { createProofCollage } = require('./vouch-proofs');
 const commands = require('./commands');
 
 const store = new OrderStore();
@@ -234,22 +235,37 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ ephemeral: true });
     const channel = await client.channels.fetch(settings.vouchChannelId);
-    const proofLinks = proofs.map((attachment, index) => `[Proof ${index + 1}](${attachment.url})`);
+    let proofCollage = null;
+    if (proofs.length) {
+      try {
+        const imageBuffers = [];
+        for (const proof of proofs) {
+          const response = await fetch(proof.url, { signal: AbortSignal.timeout(15000) });
+          if (!response.ok) throw new Error(`Proof download returned HTTP ${response.status}.`);
+          imageBuffers.push(Buffer.from(await response.arrayBuffer()));
+        }
+        proofCollage = await createProofCollage(imageBuffers);
+      } catch (error) {
+        console.error('Could not create vouch proof collage:', error);
+        return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
+      }
+    }
     const embed = new EmbedBuilder()
       .setColor(0x35a16b)
       .setTitle('Customer Vouch')
-      .setDescription([
-        `<@${interaction.user.id}> vouched for Dolce Vita, tysm! drop by the den again!`,
-        ...(proofLinks.length ? ['', '**Proof images**', proofLinks.join(' · ')] : []),
-      ].join('\n'))
+      .setDescription(`<@${interaction.user.id}> vouched for Dolce Vita, tysm! buy again!`)
       .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
       .addFields(
         { name: 'Items', value: items },
         { name: 'Feedback', value: feedback },
       )
       .setTimestamp();
-    if (proofs.length) embed.setImage(proofs[0].url);
-    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    if (proofCollage) embed.setImage('attachment://vouch-proofs.png');
+    await channel.send({
+      embeds: [embed],
+      ...(proofCollage ? { files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }] } : {}),
+      allowedMentions: { parse: [] },
+    });
     store.addVouch({ guildId: interaction.guildId, userId: interaction.user.id, items });
     return interaction.editReply(`Your vouch was posted in ${channel}.`);
   }
