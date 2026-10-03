@@ -104,6 +104,7 @@ function helpEmbed(commands) {
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
+  lines.push('**,solving <number> <number>** — Multiply two numbers.');
   lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
   lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');

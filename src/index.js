@@ -27,6 +27,7 @@ const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
+const { multiplyAmounts } = require('./multiplication');
 const commands = require('./commands');
 
 const store = new OrderStore();
@@ -385,13 +386,14 @@ async function handleCommand(interaction) {
   }
 
   if (interaction.commandName === 'solving') {
-    const amountOne = interaction.options.getNumber('amount_one', true);
-    const amountTwo = interaction.options.getNumber('amount_two', true);
-    const product = amountOne * amountTwo;
-    if (!Number.isFinite(product)) {
+    const result = multiplyAmounts(
+      interaction.options.getNumber('amount_one', true),
+      interaction.options.getNumber('amount_two', true),
+    );
+    if (!result) {
       return interaction.reply({ content: 'The result is too large to calculate.', ephemeral: true });
     }
-    return interaction.reply(`**${amountOne} × ${amountTwo} = ${product}**`);
+    return interaction.reply(`**${result.amountOne} × ${result.amountTwo} = ${result.product}**`);
   }
 
   if (interaction.commandName === 'claim') {
@@ -811,6 +813,17 @@ client.on('messageCreate', async (message) => {
         embeds: [helpEmbed(commands)],
         allowedMentions: { parse: [] },
       });
+      return;
+    }
+    if (messageCommand?.name === 'solving') {
+      const result = messageCommand.args.length === 2
+        ? multiplyAmounts(messageCommand.args[0], messageCommand.args[1])
+        : null;
+      if (!result) {
+        await message.reply('Usage: `,solving <number> <number>` — enter two finite numbers to multiply.');
+        return;
+      }
+      await message.reply(`**${result.amountOne} × ${result.amountTwo} = ${result.product}**`);
       return;
     }
     if (messageCommand?.name === 'ticketsetup') {

@@ -17,6 +17,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/solving amount_one:<number> amount_two:<number>` multiplies two numbers and displays the result.
+- `,solving <number> <number>` is a message shortcut that multiplies two finite numbers.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
 - `/set ticket_transcript channel:#transcripts` or `,set ticket_transcript <channel id>` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a transcript embed with a recent conversation excerpt and attaches the complete messages and attachment links as a text file.

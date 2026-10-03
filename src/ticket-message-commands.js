@@ -7,6 +7,9 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',ticketsetup') {
     return args.length === 0 ? { name: 'ticketsetup', args } : null;
   }
+  if (normalizedCommand === ',solving') {
+    return { name: 'solving', args };
+  }
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };
   }

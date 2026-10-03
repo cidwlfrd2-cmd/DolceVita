@@ -15,6 +15,7 @@ const { ticketChannelName } = require('../src/ticket-names');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('../src/ticket-permissions');
+const { multiplyAmounts } = require('../src/multiplication');
 
 test('ticket panel contains only the three requested buttons', () => {
   assert.deepEqual(
@@ -177,6 +178,37 @@ test('/solving is registered with two required numeric amounts', () => {
   );
 });
 
+test('message solving shortcut parses the supplied values for usage validation', () => {
+  assert.deepEqual(parseTicketMessageCommand(',solving 2.5 -4'), {
+    name: 'solving',
+    args: ['2.5', '-4'],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',solving'), {
+    name: 'solving',
+    args: [],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',solving 1 2 3'), {
+    name: 'solving',
+    args: ['1', '2', '3'],
+  });
+});
+
+test('multiplication handles finite numbers and rejects invalid values or overflow', () => {
+  assert.deepEqual(multiplyAmounts('2.5', '-4'), {
+    amountOne: 2.5,
+    amountTwo: -4,
+    product: -10,
+  });
+  assert.deepEqual(multiplyAmounts(0, 3), {
+    amountOne: 0,
+    amountTwo: 3,
+    product: 0,
+  });
+  assert.equal(multiplyAmounts('not-a-number', '3'), null);
+  assert.equal(multiplyAmounts('1e309', '2'), null);
+  assert.equal(multiplyAmounts(Number.MAX_VALUE, 2), null);
+});
+
 test('ticketsetup shortcut is registered as an administrator command', () => {
   const shortcut = commands.find((command) => command.name === 'ticketsetup');
   assert.ok(shortcut);
@@ -220,6 +252,7 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/help',
     '/setup',
     '/solving',
+    ',solving <number> <number>',
     '/set vouch',
     '/set ticket_transcript',
     '/ticket setup',
