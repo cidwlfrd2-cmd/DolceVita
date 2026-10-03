@@ -17,7 +17,8 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/solving amount_one:<number> amount_two:<number>` multiplies two numbers and displays the result.
-- `,solving <number> <number>` is a message shortcut that multiplies two finite numbers.
+- `,payment` is available only to the creator of an active ticket, where it posts the Dolce Vita payment reminder embed with the server icon thumbnail, when one is set. Only that ticket creator can use its buttons. **yes** privately sends a GCash payment-details embed with the supplied QR image; **no** closes and deletes the ticket after posting its transcript. Closing by **no** requires the transcript channel to be configured.
+- `,solving <number> <number>` is a message shortcut that sends the multiplication result in an embed, then deletes the command message. The bot needs the **Manage Messages** permission in that channel.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
 - `/set ticket_transcript channel:#transcripts` or `,set ticket_transcript <channel id>` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a transcript embed with a recent conversation excerpt and attaches the complete messages and attachment links as a text file.

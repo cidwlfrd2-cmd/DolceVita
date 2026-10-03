@@ -7,11 +7,16 @@ const {
   GatewayIntentBits,
   PermissionFlagsBits,
 } = require('discord.js');
+const path = require('node:path');
 const { OrderStore } = require('./store');
 const {
   orderButtons,
   orderEmbed,
   orderStatusEmbed,
+  multiplicationEmbed,
+  paymentReminderEmbed,
+  paymentDetailsEmbed,
+  paymentReminderButtons,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
@@ -25,9 +30,11 @@ const {
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
+const { ticketOwnerId } = require('./ticket-context');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { multiplyAmounts } = require('./multiplication');
+const { replyThenDeleteCommand } = require('./message-command-actions');
 const commands = require('./commands');
 
 const store = new OrderStore();
@@ -93,6 +100,39 @@ async function getTicketMessages(channel) {
     hasMore = batch.size === 100;
   }
   return messages.sort((first, second) => first.createdTimestamp - second.createdTimestamp);
+}
+
+async function closeTicketChannel(interaction, channel, ownerId) {
+  const settings = store.getSettings(interaction.guildId);
+  if (!settings?.ticketTranscriptChannelId) {
+    return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+  }
+  await interaction.deferReply({ ephemeral: true });
+  const transcriptChannel = await client.channels.fetch(settings.ticketTranscriptChannelId);
+  if (!transcriptChannel?.isTextBased() || typeof transcriptChannel.send !== 'function') {
+    throw new Error(`Configured transcript channel ${settings.ticketTranscriptChannelId} is not a sendable text channel.`);
+  }
+  const messages = await getTicketMessages(channel);
+  const transcript = ticketTranscriptText(messages);
+  const claimedMatch = channel.topic.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
+  await transcriptChannel.send({
+    embeds: [ticketTranscriptEmbed({
+      channelId: channel.id,
+      channelName: channel.name,
+      ownerId,
+      closedById: interaction.user.id,
+      claimedById: claimedMatch?.[1],
+      messageCount: messages.length,
+      transcriptPreview: transcript.slice(-3000),
+    })],
+    files: [{
+      attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
+      name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
+    }],
+    allowedMentions: { parse: [] },
+  });
+  await channel.delete(`Ticket closed by ${interaction.user.tag}; transcript posted in ${transcriptChannel.id}`);
+  return interaction.editReply(`Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`);
 }
 
 function isOrderStaff(interaction) {
@@ -393,7 +433,10 @@ async function handleCommand(interaction) {
     if (!result) {
       return interaction.reply({ content: 'The result is too large to calculate.', ephemeral: true });
     }
-    return interaction.reply(`**${result.amountOne} × ${result.amountTwo} = ${result.product}**`);
+    return interaction.reply({
+      embeds: [multiplicationEmbed(result)],
+      allowedMentions: { parse: [] },
+    });
   }
 
   if (interaction.commandName === 'claim') {
@@ -645,46 +688,18 @@ async function handleTicketButton(interaction) {
   }
   if (interaction.customId === 'ticket:close') {
     const channel = interaction.channel;
-    const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
-    if (!channel || !ownerMatch) {
+    const ownerId = ticketOwnerId(channel);
+    if (!channel || !ownerId) {
       return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
     const managerRoleIds = ticketManagerRoleIds(settings);
-    const canClose = interaction.user.id !== ownerMatch[1]
+    const canClose = interaction.user.id !== ownerId
       && managerRoleIds.some((roleId) => memberHasRole(interaction, roleId));
     if (!canClose) {
       return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
     }
-    if (!settings?.ticketTranscriptChannelId) {
-      return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
-    }
-    await interaction.deferReply({ ephemeral: true });
-    const transcriptChannel = await client.channels.fetch(settings.ticketTranscriptChannelId);
-    if (!transcriptChannel?.isTextBased() || typeof transcriptChannel.send !== 'function') {
-      throw new Error(`Configured transcript channel ${settings.ticketTranscriptChannelId} is not a sendable text channel.`);
-    }
-    const messages = await getTicketMessages(channel);
-    const transcript = ticketTranscriptText(messages);
-    const claimedMatch = channel.topic.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
-    await transcriptChannel.send({
-      embeds: [ticketTranscriptEmbed({
-        channelId: channel.id,
-        channelName: channel.name,
-        ownerId: ownerMatch[1],
-        closedById: interaction.user.id,
-        claimedById: claimedMatch?.[1],
-        messageCount: messages.length,
-        transcriptPreview: transcript.slice(-3000),
-      })],
-      files: [{
-        attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
-        name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
-      }],
-      allowedMentions: { parse: [] },
-    });
-    await channel.delete(`Ticket closed by ${interaction.user.tag}; transcript posted in ${transcriptChannel.id}`);
-    return interaction.editReply(`Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`);
+    return closeTicketChannel(interaction, channel, ownerId);
   }
 }
 
@@ -779,6 +794,31 @@ async function handleButton(interaction) {
   }
 }
 
+async function handlePaymentButton(interaction) {
+  const channel = interaction.channel;
+  const ownerId = ticketOwnerId(channel);
+  if (!channel || !ownerId) {
+    return interaction.reply({ content: 'Payment buttons only work inside an active ticket.', ephemeral: true });
+  }
+  if (interaction.user.id !== ownerId) {
+    return interaction.reply({ content: 'Only the ticket creator can use these payment buttons.', ephemeral: true });
+  }
+  if (interaction.customId === 'payment:yes') {
+    return interaction.reply({
+      embeds: [paymentDetailsEmbed()],
+      files: [{
+        attachment: path.join(__dirname, '..', 'assets', 'gcash-payment.png'),
+        name: 'gcash-payment.png',
+      }],
+      allowedMentions: { parse: [] },
+      ephemeral: true,
+    });
+  }
+  if (interaction.customId === 'payment:no') {
+    return closeTicketChannel(interaction, channel, ownerId);
+  }
+}
+
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
@@ -788,6 +828,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) await handleCommand(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('payment:')) await handlePaymentButton(interaction);
     else if (interaction.isModalSubmit() && [
       'ticket:order-form',
       'ticket:report-form',
@@ -815,6 +856,23 @@ client.on('messageCreate', async (message) => {
       });
       return;
     }
+    if (messageCommand?.name === 'payment') {
+      const ownerId = ticketOwnerId(message.channel);
+      if (!ownerId) {
+        await message.reply('`,payment` can only be used inside an active ticket.');
+        return;
+      }
+      if (ownerId !== message.author.id) {
+        await message.reply('Only the ticket creator can use `,payment` in this ticket.');
+        return;
+      }
+      await message.channel.send({
+        embeds: [paymentReminderEmbed(message.guild.iconURL())],
+        components: [paymentReminderButtons()],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
     if (messageCommand?.name === 'solving') {
       const result = messageCommand.args.length === 2
         ? multiplyAmounts(messageCommand.args[0], messageCommand.args[1])
@@ -823,7 +881,17 @@ client.on('messageCreate', async (message) => {
         await message.reply('Usage: `,solving <number> <number>` — enter two finite numbers to multiply.');
         return;
       }
-      await message.reply(`**${result.amountOne} × ${result.amountTwo} = ${result.product}**`);
+      const deleteError = await replyThenDeleteCommand(
+        message,
+        {
+          embeds: [multiplicationEmbed(result)],
+          allowedMentions: { parse: [] },
+        },
+      );
+      if (deleteError) {
+        console.error(`Could not delete solving command message ${message.id}:`, deleteError);
+        await message.channel.send('I solved the calculation, but could not delete your command. Please check that I have the Manage Messages permission.');
+      }
       return;
     }
     if (messageCommand?.name === 'ticketsetup') {

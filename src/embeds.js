@@ -49,6 +49,41 @@ function orderStatusEmbed(order) {
     .setTimestamp();
 }
 
+function multiplicationEmbed({ amountOne, amountTwo, product }) {
+  return new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setTitle('Multiplication Result')
+    .setDescription(`**${amountOne} × ${amountTwo} = ${product}**`);
+}
+
+function paymentReminderEmbed(serverIconUrl) {
+  const embed = new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setDescription('゛ **Dolce Vita payment reminders:**  ⸝⸝   .ᐟ 𑣲\n» send the payment details via screenshot.\n» pls complete your payment within 12hrs.\n» once payment is verified, the order will be processed.\n» no rush of orders!\n» pls click `pay` to proceed, `no` to cancel.');
+  if (serverIconUrl) embed.setThumbnail(serverIconUrl);
+  return embed;
+}
+
+function paymentDetailsEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setDescription('**🧁 payment method: gcash**\ngcash initials: H. C. S.\ngcash number: `09639298459`\npls send screenshot of the receipt, ty!')
+    .setImage('attachment://gcash-payment.png');
+}
+
+function paymentReminderButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('payment:yes')
+      .setLabel('yes')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('payment:no')
+      .setLabel('no')
+      .setStyle(ButtonStyle.Danger),
+  );
+}
+
 function orderButtons(order) {
   const active = ['pending', 'claimed'].includes(order.status);
   return new ActionRowBuilder().addComponents(
@@ -104,7 +139,8 @@ function helpEmbed(commands) {
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
-  lines.push('**,solving <number> <number>** — Multiply two numbers.');
+  lines.push('**,payment** — Show the Dolce Vita payment reminders.');
+  lines.push('**,solving <number> <number>** — Multiply two numbers, then automatically delete the command message.');
   lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
   lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
@@ -293,6 +329,10 @@ module.exports = {
   orderButtons,
   orderEmbed,
   orderStatusEmbed,
+  multiplicationEmbed,
+  paymentReminderEmbed,
+  paymentDetailsEmbed,
+  paymentReminderButtons,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,

@@ -9,13 +9,19 @@ const {
   othersTicketModal,
   ticketTranscriptEmbed,
   helpEmbed,
+  multiplicationEmbed,
+  paymentReminderEmbed,
+  paymentDetailsEmbed,
+  paymentReminderButtons,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
+const { ticketOwnerId } = require('../src/ticket-context');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('../src/ticket-permissions');
 const { multiplyAmounts } = require('../src/multiplication');
+const { replyThenDeleteCommand } = require('../src/message-command-actions');
 
 test('ticket panel contains only the three requested buttons', () => {
   assert.deepEqual(
@@ -159,6 +165,14 @@ test('ticket channel names include type, submitted form answer, and username', (
   assert.ok(ticketChannelName('order', 'Alex', 'A'.repeat(200)).length <= 100);
 });
 
+test('ticket owner lookup only recognizes active ticket topics', () => {
+  assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678;ticket-type:order' }), '123456789012345678');
+  assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678;ticket-type:report;ticket-claimed:234567890123456789' }), '123456789012345678');
+  assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678' }), null);
+  assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678;ticket-type:unknown' }), null);
+  assert.equal(ticketOwnerId(null), null);
+});
+
 test('ticket setup is registered as an administrator subcommand', () => {
   const ticketCommand = commands.find((command) => command.name === 'ticket');
   assert.ok(ticketCommand);
@@ -209,6 +223,71 @@ test('multiplication handles finite numbers and rejects invalid values or overfl
   assert.equal(multiplyAmounts(Number.MAX_VALUE, 2), null);
 });
 
+test('multiplication result is formatted as an embed', () => {
+  const embed = multiplicationEmbed(multiplyAmounts('2.5', '-4')).toJSON();
+  assert.equal(embed.title, 'Multiplication Result');
+  assert.equal(embed.description, '**2.5 × -4 = -10**');
+});
+
+test('payment reminder embed has the requested description, no title, and server icon thumbnail', () => {
+  const embed = paymentReminderEmbed('https://cdn.example/server.png').toJSON();
+  assert.equal(embed.title, undefined);
+  assert.equal(
+    embed.description,
+    '゛ **Dolce Vita payment reminders:**  ⸝⸝   .ᐟ 𑣲\n» send the payment details via screenshot.\n» pls complete your payment within 12hrs.\n» once payment is verified, the order will be processed.\n» no rush of orders!\n» pls click `pay` to proceed, `no` to cancel.',
+  );
+  assert.deepEqual(embed.thumbnail, { url: 'https://cdn.example/server.png' });
+});
+
+test('payment reminder embed supports servers without a custom icon', () => {
+  const embed = paymentReminderEmbed(null).toJSON();
+  assert.equal(embed.title, undefined);
+  assert.equal(embed.thumbnail, undefined);
+});
+
+test('payment details embed includes GCash instructions and the attached payment image', () => {
+  const embed = paymentDetailsEmbed().toJSON();
+  assert.equal(embed.title, undefined);
+  assert.equal(
+    embed.description,
+    '**🧁 payment method: gcash**\ngcash initials: H. C. S.\ngcash number: `09639298459`\npls send screenshot of the receipt, ty!',
+  );
+  assert.deepEqual(embed.image, { url: 'attachment://gcash-payment.png' });
+});
+
+test('payment reminder has yes and no buttons in the requested order', () => {
+  const buttons = paymentReminderButtons().toJSON().components;
+  assert.deepEqual(buttons.map(({ custom_id, label }) => [label, custom_id]), [
+    ['yes', 'payment:yes'],
+    ['no', 'payment:no'],
+  ]);
+});
+
+test('solving shortcut replies with the result before deleting the command message', async () => {
+  const calls = [];
+  const message = {
+    reply: async (payload) => calls.push(['reply', payload]),
+    delete: async () => calls.push(['delete']),
+  };
+  const resultEmbed = multiplicationEmbed(multiplyAmounts('2', '3'));
+  const reply = { embeds: [resultEmbed], allowedMentions: { parse: [] } };
+  const deleteError = await replyThenDeleteCommand(message, reply);
+  assert.equal(deleteError, null);
+  assert.deepEqual(calls, [
+    ['reply', reply],
+    ['delete'],
+  ]);
+});
+
+test('solving shortcut reports command deletion errors to its caller', async () => {
+  const deleteError = new Error('Missing Manage Messages permission');
+  const message = {
+    reply: async () => {},
+    delete: async () => { throw deleteError; },
+  };
+  assert.equal(await replyThenDeleteCommand(message, 'result'), deleteError);
+});
+
 test('ticketsetup shortcut is registered as an administrator command', () => {
   const shortcut = commands.find((command) => command.name === 'ticketsetup');
   assert.ok(shortcut);
@@ -233,6 +312,14 @@ test('ticket message command parser recognizes category and transcript setup ali
     args: ['123456789012345678'],
   });
   assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
+});
+
+test('ticket message command parser recognizes payment reminder shortcut without arguments', () => {
+  assert.deepEqual(parseTicketMessageCommand(',payment'), {
+    name: 'payment',
+    args: [],
+  });
+  assert.equal(parseTicketMessageCommand(',payment extra'), null);
 });
 
 test('bot pronouns shortcut is not registered', () => {
