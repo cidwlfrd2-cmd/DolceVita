@@ -2,6 +2,9 @@ const { ChannelType, PermissionFlagsBits, SlashCommandBuilder } = require('disco
 
 module.exports = [
   new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('List all bot commands.'),
+  new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Choose the channel for public order posts.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -23,6 +26,14 @@ module.exports = [
       .addChannelOption((option) => option
         .setName('channel')
         .setDescription('Channel for public vouch embeds')
+        .setRequired(true)
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('ticket_transcript')
+      .setDescription('Choose where closed ticket transcripts are posted.')
+      .addChannelOption((option) => option
+        .setName('channel')
+        .setDescription('Channel for closed ticket transcripts')
         .setRequired(true)
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))),
   new SlashCommandBuilder()
@@ -155,4 +166,8 @@ module.exports = [
       .addRoleOption((option) => option
         .setName('staff_role')
         .setDescription('Optional role that can view and manage tickets'))),
+  new SlashCommandBuilder()
+    .setName('ticketsetup')
+    .setDescription('Post the ticket panel in this channel.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map((command) => command.toJSON());

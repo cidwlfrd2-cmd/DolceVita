@@ -13,19 +13,28 @@ const {
   orderEmbed,
   orderTicketModal,
   othersTicketModal,
+  helpEmbed,
   queueEmbed,
   reportTicketModal,
   ticketButtons,
   ticketEmbed,
   ticketPanelButtons,
   ticketPanelEmbed,
+  ticketTranscriptEmbed,
 } = require('./embeds');
 const { createProofCollage } = require('./vouch-proofs');
+const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
 const commands = require('./commands');
 
 const store = new OrderStore();
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
 const stickyRefreshes = new Map();
 const ticketClaimLocks = new Map();
 
@@ -44,6 +53,33 @@ function isStaff(interaction) {
       || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
   }
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages) ?? false;
+}
+
+async function postTicketPanel(channel) {
+  if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+    throw new Error('The ticket panel must be posted in a sendable text channel.');
+  }
+  return channel.send({
+    embeds: [ticketPanelEmbed()],
+    components: [ticketPanelButtons()],
+  });
+}
+
+async function getTicketMessages(channel) {
+  const messages = [];
+  let before;
+  let hasMore = true;
+  while (hasMore) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+    if (batch.size === 0) break;
+    messages.push(...batch.values());
+    const oldest = batch.reduce((result, message) => (
+      !result || message.createdTimestamp < result.createdTimestamp ? message : result
+    ), null);
+    before = oldest.id;
+    hasMore = batch.size === 100;
+  }
+  return messages.sort((first, second) => first.createdTimestamp - second.createdTimestamp);
 }
 
 function isOrderStaff(interaction) {
@@ -190,6 +226,21 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
 }
 
 async function handleCommand(interaction) {
+  if (interaction.commandName === 'help') {
+    return interaction.reply({
+      embeds: [helpEmbed(commands)],
+      allowedMentions: { parse: [] },
+    });
+  }
+
+  if (interaction.commandName === 'ticketsetup') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only server administrators can post the ticket panel.', ephemeral: true });
+    }
+    await postTicketPanel(interaction.channel);
+    return interaction.reply({ content: `Ticket panel posted in ${interaction.channel}.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'ticket' && interaction.options.getSubcommand() === 'setup') {
     const channel = interaction.channel;
     if (!channel?.isTextBased() || typeof channel.send !== 'function') {
@@ -197,10 +248,7 @@ async function handleCommand(interaction) {
     }
     const staffRole = interaction.options.getRole('staff_role');
     if (staffRole) store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
-    await channel.send({
-      embeds: [ticketPanelEmbed()],
-      components: [ticketPanelButtons()],
-    });
+    await postTicketPanel(channel);
     return interaction.reply({ content: `Ticket panel posted in ${channel}.`, ephemeral: true });
   }
 
@@ -222,6 +270,15 @@ async function handleCommand(interaction) {
     const channel = interaction.options.getChannel('channel', true);
     store.setSettings(interaction.guildId, { vouchChannelId: channel.id });
     return interaction.reply({ content: `Vouches will be posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'set' && interaction.options.getSubcommand() === 'ticket_transcript') {
+    const channel = interaction.options.getChannel('channel', true);
+    if (!channel.isTextBased() || typeof channel.send !== 'function' || channel.guildId !== interaction.guildId) {
+      return interaction.reply({ content: 'Choose a text channel in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { ticketTranscriptChannelId: channel.id });
+    return interaction.reply({ content: `Closed ticket transcripts will be posted in ${channel}.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'setowner') {
@@ -512,9 +569,37 @@ async function handleTicketButton(interaction) {
     if (!canClose) {
       return interaction.reply({ content: 'Only the configured ticket staff or owner role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
     }
+    if (!settings?.ticketTranscriptChannelId) {
+      return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const transcriptChannel = await client.channels.fetch(settings.ticketTranscriptChannelId);
+    if (!transcriptChannel?.isTextBased() || typeof transcriptChannel.send !== 'function') {
+      throw new Error(`Configured transcript channel ${settings.ticketTranscriptChannelId} is not a sendable text channel.`);
+    }
+    const messages = await getTicketMessages(channel);
+    const transcript = ticketTranscriptText(messages);
+    const claimedMatch = channel.topic.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
+    await transcriptChannel.send({
+      embeds: [ticketTranscriptEmbed({
+        channelId: channel.id,
+        channelName: channel.name,
+        ownerId: ownerMatch[1],
+        closedById: interaction.user.id,
+        claimedById: claimedMatch?.[1],
+        messageCount: messages.length,
+        transcriptPreview: transcript.slice(-3000),
+      })],
+      files: [{
+        attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
+        name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
+      }],
+      allowedMentions: { parse: [] },
+    });
     await channel.permissionOverwrites.edit(ownerMatch[1], { SendMessages: false });
     if (!channel.name.startsWith('closed-')) await channel.setName(`closed-${channel.name}`.slice(0, 100));
-    return interaction.update({ content: 'This ticket has been closed.', components: [] });
+    await interaction.message.edit({ content: `Ticket closed by <@${interaction.user.id}>.`, components: [], allowedMentions: { parse: [] } });
+    return interaction.editReply(`Ticket closed. Transcript posted in ${transcriptChannel}.`);
   }
 }
 
@@ -600,7 +685,39 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-client.on('messageCreate', refreshStickyMessage);
+client.on('messageCreate', async (message) => {
+  const content = !message.author.bot && message.guild
+    ? message.content.trim().toLowerCase()
+    : '';
+  const messageCommand = [',help', ',ticketsetup'].includes(content) ? content : '';
+  try {
+    if (messageCommand === ',help') {
+      await message.channel.send({
+        embeds: [helpEmbed(commands)],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    if (messageCommand === ',ticketsetup') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can post the ticket panel.');
+      } else {
+        await postTicketPanel(message.channel);
+      }
+      return;
+    }
+    await refreshStickyMessage(message);
+  } catch (error) {
+    console.error(messageCommand ? `Could not handle ${messageCommand}:` : 'Message handling failed:', error);
+    if (messageCommand) {
+      try {
+        await message.reply('Could not run that command. Check that the bot can send messages and embeds in this channel.');
+      } catch (replyError) {
+        console.error('Could not report message command failure:', replyError);
+      }
+    }
+  }
+});
 
 if (!process.env.DISCORD_TOKEN) throw new Error('Set DISCORD_TOKEN in your .env file.');
 client.login(process.env.DISCORD_TOKEN);

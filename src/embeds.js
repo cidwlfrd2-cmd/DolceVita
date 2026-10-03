@@ -77,6 +77,31 @@ function ticketPanelEmbed() {
     .setDescription('Choose a button below to create a private support ticket.');
 }
 
+function helpEmbed(commands) {
+  const lines = [];
+  for (const command of commands) {
+    const subcommands = command.options?.filter((option) => option.type === 1) ?? [];
+    if (subcommands.length) {
+      for (const subcommand of subcommands) {
+        lines.push(`**/${command.name} ${subcommand.name}** — ${subcommand.description}`);
+      }
+      continue;
+    }
+
+    const options = command.options?.map((option) => (
+      option.required ? `<${option.name}>` : `[${option.name}]`
+    )) ?? [];
+    lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
+  }
+  lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
+  lines.push('**,help** — Show this command list.');
+
+  return new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setTitle('Bot Commands')
+    .setDescription(lines.join('\n'));
+}
+
 function ticketPanelButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -214,15 +239,45 @@ function ticketButtons(claimed = false) {
   );
 }
 
+function ticketTranscriptEmbed({
+  channelId,
+  channelName,
+  ownerId,
+  closedById,
+  claimedById,
+  messageCount,
+  transcriptPreview,
+}) {
+  const embed = new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setTitle('Ticket Transcript')
+    .setDescription([
+      `Transcript from **#${channelName}**. The complete conversation is attached as a text file.`,
+      '',
+      transcriptPreview ? `**Recent conversation excerpt:**\n${transcriptPreview}` : '',
+    ].filter(Boolean).join('\n'))
+    .addFields(
+      { name: 'Ticket', value: `<#${channelId}>`, inline: true },
+      { name: 'Opened by', value: `<@${ownerId}>`, inline: true },
+      { name: 'Closed by', value: `<@${closedById}>`, inline: true },
+      { name: 'Messages', value: String(messageCount), inline: true },
+    )
+    .setTimestamp();
+  if (claimedById) embed.addFields({ name: 'Claimed by', value: `<@${claimedById}>`, inline: true });
+  return embed;
+}
+
 module.exports = {
   orderButtons,
   orderEmbed,
   orderTicketModal,
   othersTicketModal,
+  helpEmbed,
   queueEmbed,
   reportTicketModal,
   ticketButtons,
   ticketEmbed,
   ticketPanelButtons,
   ticketPanelEmbed,
+  ticketTranscriptEmbed,
 };

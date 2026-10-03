@@ -8,9 +8,12 @@ const {
   ticketButtons,
   reportTicketModal,
   othersTicketModal,
+  ticketTranscriptEmbed,
+  helpEmbed,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
+const { ticketTranscriptText } = require('../src/ticket-transcript');
 
 test('ticket panel contains the three requested buttons and an embed', () => {
   assert.equal(ticketPanelEmbed().toJSON().title, 'Open a Ticket');
@@ -132,4 +135,81 @@ test('ticket setup is registered as an administrator subcommand', () => {
   assert.ok(ticketCommand);
   assert.equal(ticketCommand.options[0].name, 'setup');
   assert.equal(ticketCommand.default_member_permissions, '8');
+});
+
+test('ticketsetup shortcut is registered as an administrator command', () => {
+  const shortcut = commands.find((command) => command.name === 'ticketsetup');
+  assert.ok(shortcut);
+  assert.equal(shortcut.default_member_permissions, '8');
+});
+
+test('help command lists registered commands, subcommands, and message shortcuts', () => {
+  const embed = helpEmbed(commands).toJSON();
+  assert.equal(commands.find((command) => command.name === 'help')?.description, 'List all bot commands.');
+  for (const commandText of [
+    '/help',
+    '/setup',
+    '/set vouch',
+    '/set ticket_transcript',
+    '/ticket setup',
+    '/ticketsetup',
+    '/stickymessage set',
+    '/stickymessage remove',
+    ',ticketsetup',
+    ',help',
+  ]) {
+    assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
+  }
+  assert.ok(embed.description.length <= 4096);
+});
+
+test('ticket transcript channel setup is registered under /set for administrators', () => {
+  const setCommand = commands.find((command) => command.name === 'set');
+  const transcriptSubcommand = setCommand.options.find((option) => option.name === 'ticket_transcript');
+  assert.ok(transcriptSubcommand);
+  assert.equal(transcriptSubcommand.options[0].name, 'channel');
+  assert.equal(setCommand.default_member_permissions, '8');
+});
+
+test('ticket transcript embed includes ticket, participants, and message count', () => {
+  const embed = ticketTranscriptEmbed({
+    channelId: 'ticket-channel',
+    channelName: 'order-latte-alex',
+    ownerId: 'ticket-owner',
+    closedById: 'staff-1',
+    claimedById: 'staff-1',
+    messageCount: 3,
+    transcriptPreview: 'Alex: I need help.\nStaff: How can we help?',
+  }).toJSON();
+
+  assert.equal(embed.title, 'Ticket Transcript');
+  assert.match(embed.description, /order-latte-alex/);
+  assert.match(embed.description, /Alex: I need help\./);
+  assert.deepEqual(
+    embed.fields.map((field) => field.name),
+    ['Ticket', 'Opened by', 'Closed by', 'Messages', 'Claimed by'],
+  );
+  assert.equal(embed.fields.find((field) => field.name === 'Messages').value, '3');
+});
+
+test('ticket transcript text preserves message order, content, and attachment links', () => {
+  const messages = [
+    {
+      createdTimestamp: Date.parse('2026-01-02T00:00:00.000Z'),
+      author: { tag: 'Alex#0001' },
+      content: 'Hello staff',
+      attachments: new Map([['attachment-1', { name: 'proof.png', url: 'https://example.test/proof.png' }]]),
+    },
+    {
+      createdTimestamp: Date.parse('2026-01-02T00:01:00.000Z'),
+      author: { tag: 'Staff#0001' },
+      content: 'How can I help?',
+      attachments: new Map(),
+    },
+  ];
+
+  const transcript = ticketTranscriptText(messages);
+  assert.ok(transcript.indexOf('Alex#0001:') < transcript.indexOf('Staff#0001:'));
+  assert.match(transcript, /Hello staff/);
+  assert.match(transcript, /proof\.png \(https:\/\/example\.test\/proof\.png\)/);
 });
