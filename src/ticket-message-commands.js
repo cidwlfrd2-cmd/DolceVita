@@ -7,12 +7,6 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',ticketsetup') {
     return args.length === 0 ? { name: 'ticketsetup', args } : null;
   }
-  if (normalizedCommand === ',botpronouns') {
-    const action = args[0]?.toLowerCase();
-    if (!action) return { name: 'botpronouns', action: 'show', args: [] };
-    if (!['add', 'remove', 'change'].includes(action)) return null;
-    return { name: 'botpronouns', action, args: args.slice(1) };
-  }
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };
   }

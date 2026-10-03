@@ -7,6 +7,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const { orderStatusLabel } = require('./order-status');
 
 const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
@@ -30,6 +31,22 @@ function orderEmbed(order) {
   if (order.processingBy) embed.addFields({ name: 'Processing by', value: `<@${order.processingBy}>`, inline: true });
   embed.setTimestamp(new Date(order.createdAt));
   return embed;
+}
+
+function orderStatusEmbed(order) {
+  const status = orderStatusLabel(order);
+  const colors = { Processing: 0x3478c7, Complete: 0x35a16b, Cancelled: 0xc94c4c };
+  return new EmbedBuilder()
+    .setColor(colors[status])
+    .setTitle('Order Status Update')
+    .setDescription(`Your order **#${order.id}** is now **${status}**.`)
+    .addFields(
+      { name: 'Items', value: String(order.items ?? order.item), inline: true },
+      { name: 'Quantity', value: String(order.quantity), inline: true },
+      { name: 'Payment method', value: order.paymentMethod ?? 'Not specified', inline: true },
+      { name: 'Submitted in', value: order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel' },
+    )
+    .setTimestamp();
 }
 
 function orderButtons(order) {
@@ -87,8 +104,7 @@ function helpEmbed(commands) {
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
-  lines.push('**,botpronouns** — View the saved pronouns for this server.');
-  lines.push('**,botpronouns add <pronouns>**, **,botpronouns change <pronouns>**, or **,botpronouns remove** — Manage the bot pronouns for this server (administrator only).');
+  lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
   lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
   lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
@@ -224,17 +240,24 @@ function ticketEmbed(type, user, orderForm, reportForm, othersForm) {
 }
 
 function ticketButtons(claimed = false) {
-  return new ActionRowBuilder().addComponents(
+  const buttons = [
     new ButtonBuilder()
       .setCustomId('ticket:claim')
       .setLabel(claimed ? 'Claimed' : 'Claim Ticket')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(claimed),
-    new ButtonBuilder()
-      .setCustomId('ticket:close')
-      .setLabel('Close Ticket')
-      .setStyle(ButtonStyle.Danger),
-  );
+  ];
+  if (claimed) {
+    buttons.push(new ButtonBuilder()
+      .setCustomId('ticket:unclaim')
+      .setLabel('Unclaim Ticket')
+      .setStyle(ButtonStyle.Secondary));
+  }
+  buttons.push(new ButtonBuilder()
+    .setCustomId('ticket:close')
+    .setLabel('Close Ticket')
+    .setStyle(ButtonStyle.Danger));
+  return new ActionRowBuilder().addComponents(...buttons);
 }
 
 function ticketTranscriptEmbed({
@@ -268,6 +291,7 @@ function ticketTranscriptEmbed({
 module.exports = {
   orderButtons,
   orderEmbed,
+  orderStatusEmbed,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,

@@ -11,6 +11,7 @@ const { OrderStore } = require('./store');
 const {
   orderButtons,
   orderEmbed,
+  orderStatusEmbed,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
@@ -593,6 +594,43 @@ async function handleTicketButton(interaction) {
       return interaction.editReply('You claimed this ticket. Other ticket staff can view it but cannot send messages.');
     });
   }
+  if (interaction.customId === 'ticket:unclaim') {
+    const channel = interaction.channel;
+    const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
+    if (!channel || !ownerMatch) {
+      return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    return withTicketClaimLock(channel.id, async () => {
+      const currentChannel = await channel.guild.channels.fetch(channel.id);
+      const claimedMatch = currentChannel.topic?.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
+      if (!claimedMatch) {
+        return interaction.editReply('This ticket is not currently claimed.');
+      }
+      if (claimedMatch[1] !== interaction.user.id) {
+        return interaction.editReply('Only the staff member who claimed this ticket can unclaim it.');
+      }
+
+      const settings = store.getSettings(interaction.guildId);
+      for (const roleId of ticketAccessRoleIds(settings)) {
+        await currentChannel.permissionOverwrites.edit(roleId, {
+          SendMessages: true,
+          SendMessagesInThreads: true,
+        });
+      }
+      if (interaction.user.id !== ownerMatch[1]) {
+        await currentChannel.permissionOverwrites.delete(interaction.user.id);
+      }
+      await currentChannel.setTopic(currentChannel.topic.replace(/;ticket-claimed:\d+/, ''));
+      await interaction.message.edit({
+        content: 'Ticket unclaimed and available for another staff member to claim.',
+        components: [ticketButtons()],
+        allowedMentions: { parse: [] },
+      });
+      return interaction.editReply('You unclaimed this ticket. Another authorized staff member can now claim it.');
+    });
+  }
   if (interaction.customId === 'ticket:close') {
     const channel = interaction.channel;
     const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
@@ -694,6 +732,39 @@ async function handleButton(interaction) {
     components: [orderButtons(order)],
     allowedMentions: { parse: [] },
   });
+  const statusEmbed = orderStatusEmbed(order);
+  const notificationFailures = [];
+  if (order.sourceChannelId) {
+    try {
+      const sourceChannel = await client.channels.fetch(order.sourceChannelId);
+      if (!sourceChannel
+        || sourceChannel.guildId !== interaction.guildId
+        || !sourceChannel.isTextBased()
+        || typeof sourceChannel.send !== 'function') {
+        throw new Error(`Order source channel ${order.sourceChannelId} is unavailable or not a sendable server text channel.`);
+      }
+      await sourceChannel.send({
+        embeds: [statusEmbed],
+        allowedMentions: { parse: [] },
+      });
+    } catch (error) {
+      console.error(`Could not send status update for order ${order.id} to source channel ${order.sourceChannelId}:`, error);
+      notificationFailures.push(`the original order channel <#${order.sourceChannelId}>`);
+    }
+  }
+  try {
+    const customer = await client.users.fetch(order.customerId);
+    await customer.send({ embeds: [statusEmbed], allowedMentions: { parse: [] } });
+  } catch (error) {
+    console.error(`Could not DM order status update for order ${order.id} to customer ${order.customerId}:`, error);
+    notificationFailures.push('the order submitter by DM');
+  }
+  if (notificationFailures.length) {
+    await interaction.followUp({
+      content: `Order status was updated, but I could not notify ${notificationFailures.join(' and ')}.`,
+      ephemeral: true,
+    });
+  }
 }
 
 client.once('ready', () => {
@@ -738,55 +809,6 @@ client.on('messageCreate', async (message) => {
       } else {
         await postTicketPanel(message.channel);
       }
-      return;
-    }
-    if (messageCommand?.name === 'botpronouns') {
-      const currentPronouns = store.getSettings(message.guild.id)?.botPronouns ?? null;
-      if (messageCommand.action === 'show') {
-        await message.reply({
-          content: currentPronouns
-            ? `My pronouns for this server are: ${currentPronouns}`
-            : 'No bot pronouns have been set for this server.',
-          allowedMentions: { parse: [] },
-        });
-        return;
-      }
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can change the bot pronouns.');
-        return;
-      }
-      if (messageCommand.action === 'remove') {
-        if (messageCommand.args.length) {
-          await message.reply('Usage: `,botpronouns remove`');
-          return;
-        }
-        if (!currentPronouns) {
-          await message.reply('No bot pronouns are currently set for this server.');
-          return;
-        }
-        store.setSettings(message.guild.id, { botPronouns: null });
-        await message.reply('Bot pronouns have been removed for this server.');
-        return;
-      }
-
-      const pronouns = messageCommand.args.join(' ').trim();
-      if (!pronouns || pronouns.length > 100) {
-        await message.reply(`Usage: \`,botpronouns ${messageCommand.action} <pronouns>\` (1–100 characters)`);
-        return;
-      }
-      if (messageCommand.action === 'add' && currentPronouns) {
-        await message.reply('Bot pronouns are already set. Use `,botpronouns change <pronouns>` to replace them.');
-        return;
-      }
-      if (messageCommand.action === 'change' && !currentPronouns) {
-        await message.reply('No bot pronouns are set. Use `,botpronouns add <pronouns>` first.');
-        return;
-      }
-      store.setSettings(message.guild.id, { botPronouns: pronouns });
-      await message.reply({
-        content: `Bot pronouns ${messageCommand.action === 'add' ? 'added' : 'changed'} to: ${pronouns}`,
-        allowedMentions: { parse: [] },
-      });
       return;
     }
     if (messageCommand?.name === 'setupticketcategory' || messageCommand?.name === 'set_ticket_transcript') {

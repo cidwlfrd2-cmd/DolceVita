@@ -114,9 +114,15 @@ test('ticket action buttons include claim and close, disabling claim after assig
   assert.notEqual(buttons[0].disabled, true);
 
   const claimedButtons = ticketButtons(true).toJSON().components;
+  assert.deepEqual(
+    claimedButtons.map((button) => button.custom_id),
+    ['ticket:claim', 'ticket:unclaim', 'ticket:close'],
+  );
   assert.equal(claimedButtons[0].label, 'Claimed');
   assert.equal(claimedButtons[0].disabled, true);
+  assert.equal(claimedButtons[1].label, 'Unclaim Ticket');
   assert.notEqual(claimedButtons[1].disabled, true);
+  assert.notEqual(claimedButtons[2].disabled, true);
 });
 
 test('ticket access includes configured ticket, admin, and owner roles', () => {
@@ -185,28 +191,9 @@ test('ticket message command parser recognizes category and transcript setup ali
   assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
 });
 
-test('bot pronouns message command supports show, add, remove, and change actions', () => {
-  assert.deepEqual(parseTicketMessageCommand(',botpronouns'), {
-    name: 'botpronouns',
-    action: 'show',
-    args: [],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',botpronouns add she/her'), {
-    name: 'botpronouns',
-    action: 'add',
-    args: ['she/her'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',botpronouns change they/them'), {
-    name: 'botpronouns',
-    action: 'change',
-    args: ['they/them'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',botpronouns remove'), {
-    name: 'botpronouns',
-    action: 'remove',
-    args: [],
-  });
-  assert.equal(parseTicketMessageCommand(',botpronouns invalid she/her'), null);
+test('bot pronouns shortcut is not registered', () => {
+  assert.equal(parseTicketMessageCommand(',botpronouns'), null);
+  assert.equal(parseTicketMessageCommand(',pronouns'), null);
 });
 
 test('removed ticket role setup message commands are not recognized', () => {
@@ -231,12 +218,10 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/setupticketcategory',
     ',setupticketcategory',
     ',set ticket_transcript',
-    ',botpronouns add',
-    ',botpronouns change',
-    ',botpronouns remove',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
+  assert.match(embed.description, /unclaimed only by the current claimant/);
   assert.match(embed.description, /automatically delete the ticket channel/);
   assert.ok(embed.description.length <= 4096);
 });

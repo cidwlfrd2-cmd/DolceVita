@@ -4,7 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { OrderStore } = require('../src/store');
-const { orderEmbed } = require('../src/embeds');
+const { orderEmbed, orderStatusEmbed } = require('../src/embeds');
+const { orderStatusLabel } = require('../src/order-status');
 
 function createStore() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dolce-vita-'));
@@ -31,10 +32,6 @@ test('orders persist, can be claimed in order, and leave the active queue when f
   assert.equal(restartedStore.getSettings('guild-1').ownerRoleId, 'order-owner-role');
   restartedStore.setSettings('guild-1', { adminRoleId: 'order-admin-role' });
   assert.equal(restartedStore.getSettings('guild-1').adminRoleId, 'order-admin-role');
-  restartedStore.setSettings('guild-1', { botPronouns: 'she/her' });
-  assert.equal(restartedStore.getSettings('guild-1').botPronouns, 'she/her');
-  restartedStore.setSettings('guild-1', { botPronouns: null });
-  assert.equal(restartedStore.getSettings('guild-1').botPronouns, null);
   restartedStore.setSettings('guild-1', { orderChannelId: 'orders-channel' });
   assert.equal(restartedStore.getSettings('guild-1').orderChannelId, 'orders-channel');
   assert.deepEqual(restartedStore.listActive('guild-1').map((order) => order.id), [first.id, second.id]);
@@ -76,6 +73,36 @@ test('completed and cancelled statuses override processing in the order embed', 
   assert.equal(completedEmbed.fields.find((field) => field.name === 'Status').value, 'Completed');
   const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
   assert.equal(cancelledEmbed.fields.find((field) => field.name === 'Status').value, 'Cancelled');
+});
+
+test('source-channel status labels reflect processing, complete, and cancelled transitions', () => {
+  assert.equal(orderStatusLabel({ status: 'claimed', processingStatus: 'processing' }), 'Processing');
+  assert.equal(orderStatusLabel({ status: 'completed', processingStatus: 'processing' }), 'Complete');
+  assert.equal(orderStatusLabel({ status: 'cancelled', processingStatus: 'not_yet' }), 'Cancelled');
+});
+
+test('order status notification embed includes the order status and details', () => {
+  const embed = orderStatusEmbed({
+    id: 'ORDER-3',
+    status: 'completed',
+    processingStatus: 'processing',
+    items: 'Coffee',
+    quantity: 2,
+    paymentMethod: 'Card',
+    sourceChannelId: 'source-1',
+  }).toJSON();
+
+  assert.equal(embed.title, 'Order Status Update');
+  assert.match(embed.description, /ORDER-3.*Complete/);
+  assert.deepEqual(
+    embed.fields.map(({ name, value }) => [name, value]),
+    [
+      ['Items', 'Coffee'],
+      ['Quantity', '2'],
+      ['Payment method', 'Card'],
+      ['Submitted in', '<#source-1>'],
+    ],
+  );
 });
 
 test('new order embed shows Noted status and Served by label', () => {
