@@ -5,7 +5,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 ## Setup
 
 1. Install Node.js 20 or newer, then run `npm install`.
-2. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Enable the `bot` and `applications.commands` scopes in its server install link. Enable the privileged **Message Content Intent** in the bot settings to use the `,ticketsetup` and `,help` shortcuts. The bot needs permission to view and send messages, embed links, manage channels and roles for private tickets, and use application commands.
+2. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Enable the `bot` and `applications.commands` scopes in its server install link. Enable the privileged **Message Content Intent** in the bot settings to use message-command shortcuts. The bot needs permission to view and send messages, embed links, manage channels and roles for private tickets, and use application commands.
 3. Copy `.env.example` to `.env`, then fill in the bot token and application client ID. Set `DISCORD_GUILD_ID` to register commands immediately in one server while testing; leave it blank for global registration.
 4. Run `npm run deploy`, invite the bot to your server, and start it with `npm start`.
 5. An administrator runs `/setup channel:#orders`. Optionally choose a staff role; without one, staff actions require the Discord `Manage Messages` permission.
@@ -17,7 +17,8 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
-- `/set ticket_transcript channel:#transcripts` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a transcript embed with a recent conversation excerpt and attaches the complete messages and attachment links as a text file.
+- `/set ticket_transcript channel:#transcripts` or `,set ticket_transcript <channel id>` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a transcript embed with a recent conversation excerpt and attaches the complete messages and attachment links as a text file.
+- `/setupticketcategory category_id:<category id>` or `,setupticketcategory <category id>` sets the category for new ticket channels. Both forms are administrator-only.
 - `/help` or `,help` posts an embed listing the bot’s slash commands and message shortcuts.
 - `/vouch items:<items> feedback:<feedback> proof:<image> proof2:<image> ...` posts one public embed showing the items, feedback, submitter's name, and a single collage containing up to five proof images.
 - `/checkvouch user:<optional>` displays a user's total vouches and their vouch dates/items. Omit the user to check your own history.

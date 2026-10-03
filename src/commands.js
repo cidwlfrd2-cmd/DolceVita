@@ -170,4 +170,13 @@ module.exports = [
     .setName('ticketsetup')
     .setDescription('Post the ticket panel in this channel.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('setupticketcategory')
+    .setDescription('Choose the category for new ticket channels.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption((option) => option
+      .setName('category_id')
+      .setDescription('ID of the category where new tickets will be created')
+      .setRequired(true)
+      .setMaxLength(20)),
 ].map((command) => command.toJSON());

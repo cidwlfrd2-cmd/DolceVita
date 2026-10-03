@@ -19,12 +19,12 @@ const {
   ticketButtons,
   ticketEmbed,
   ticketPanelButtons,
-  ticketPanelEmbed,
   ticketTranscriptEmbed,
 } = require('./embeds');
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
+const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const commands = require('./commands');
 
 const store = new OrderStore();
@@ -60,9 +60,19 @@ async function postTicketPanel(channel) {
     throw new Error('The ticket panel must be posted in a sendable text channel.');
   }
   return channel.send({
-    embeds: [ticketPanelEmbed()],
     components: [ticketPanelButtons()],
   });
+}
+
+async function fetchGuildChannelById(guild, channelId) {
+  if (!/^\d{17,20}$/.test(channelId ?? '')) {
+    throw new Error('Enter a valid Discord channel ID.');
+  }
+  const channel = await guild.channels.fetch(channelId);
+  if (!channel || channel.guildId !== guild.id) {
+    throw new Error('The channel ID must belong to this server.');
+  }
+  return channel;
 }
 
 async function getTicketMessages(channel) {
@@ -205,6 +215,13 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       ],
     });
   }
+  let parent;
+  if (settings?.ticketCategoryId) {
+    parent = await fetchGuildChannelById(guild, settings.ticketCategoryId);
+    if (parent.type !== ChannelType.GuildCategory) {
+      throw new Error(`Configured ticket category ${settings.ticketCategoryId} is not a category.`);
+    }
+  }
 
   const channel = await guild.channels.create({
     name: ticketChannelName(
@@ -213,6 +230,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       orderForm?.product ?? reportForm?.product ?? othersForm?.message,
     ),
     type: ChannelType.GuildText,
+    ...(parent ? { parent: parent.id } : {}),
     topic: `ticket-owner:${interaction.user.id};ticket-type:${type}`,
     permissionOverwrites,
     reason: `${type} ticket opened by ${interaction.user.tag}`,
@@ -239,6 +257,21 @@ async function handleCommand(interaction) {
     }
     await postTicketPanel(interaction.channel);
     return interaction.reply({ content: `Ticket panel posted in ${interaction.channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'setupticketcategory') {
+    const categoryId = interaction.options.getString('category_id', true).trim();
+    let category;
+    try {
+      category = await fetchGuildChannelById(interaction.guild, categoryId);
+    } catch (error) {
+      return interaction.reply({ content: error.message, ephemeral: true });
+    }
+    if (category.type !== ChannelType.GuildCategory) {
+      return interaction.reply({ content: 'That ID is not a category in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { ticketCategoryId: category.id });
+    return interaction.reply({ content: `New ticket channels will be created in **${category.name}**.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'ticket' && interaction.options.getSubcommand() === 'setup') {
@@ -686,19 +719,18 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('messageCreate', async (message) => {
-  const content = !message.author.bot && message.guild
-    ? message.content.trim().toLowerCase()
-    : '';
-  const messageCommand = [',help', ',ticketsetup'].includes(content) ? content : '';
+  const messageCommand = !message.author.bot && message.guild
+    ? parseTicketMessageCommand(message.content)
+    : null;
   try {
-    if (messageCommand === ',help') {
+    if (messageCommand?.name === 'help') {
       await message.channel.send({
         embeds: [helpEmbed(commands)],
         allowedMentions: { parse: [] },
       });
       return;
     }
-    if (messageCommand === ',ticketsetup') {
+    if (messageCommand?.name === 'ticketsetup') {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await message.reply('Only server administrators can post the ticket panel.');
       } else {
@@ -706,9 +738,46 @@ client.on('messageCreate', async (message) => {
       }
       return;
     }
+    if (messageCommand?.name === 'setupticketcategory' || messageCommand?.name === 'set_ticket_transcript') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can configure ticket channels.');
+        return;
+      }
+      if (messageCommand.args.length !== 1) {
+        const usage = messageCommand.name === 'setupticketcategory'
+          ? 'Usage: `,setupticketcategory <category id>`'
+          : 'Usage: `,set ticket_transcript <channel id>`';
+        await message.reply(usage);
+        return;
+      }
+
+      let channel;
+      try {
+        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
+      } catch (error) {
+        await message.reply(error.message);
+        return;
+      }
+      if (messageCommand.name === 'setupticketcategory') {
+        if (channel.type !== ChannelType.GuildCategory) {
+          await message.reply('That ID is not a category in this server.');
+          return;
+        }
+        store.setSettings(message.guild.id, { ticketCategoryId: channel.id });
+        await message.reply(`New ticket channels will be created in **${channel.name}**.`);
+      } else {
+        if (!channel.isTextBased() || typeof channel.send !== 'function') {
+          await message.reply('That ID is not a sendable text channel in this server.');
+          return;
+        }
+        store.setSettings(message.guild.id, { ticketTranscriptChannelId: channel.id });
+        await message.reply(`Closed ticket transcripts will be posted in ${channel}.`);
+      }
+      return;
+    }
     await refreshStickyMessage(message);
   } catch (error) {
-    console.error(messageCommand ? `Could not handle ${messageCommand}:` : 'Message handling failed:', error);
+    console.error(messageCommand ? `Could not handle ,${messageCommand.name}:` : 'Message handling failed:', error);
     if (messageCommand) {
       try {
         await message.reply('Could not run that command. Check that the bot can send messages and embeds in this channel.');

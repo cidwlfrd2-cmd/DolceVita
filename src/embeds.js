@@ -70,13 +70,6 @@ function queueEmbed(orders) {
   return embed;
 }
 
-function ticketPanelEmbed() {
-  return new EmbedBuilder()
-    .setColor(0x3478c7)
-    .setTitle('Open a Ticket')
-    .setDescription('Choose a button below to create a private support ticket.');
-}
-
 function helpEmbed(commands) {
   const lines = [];
   for (const command of commands) {
@@ -94,6 +87,8 @@ function helpEmbed(commands) {
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
+  lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
+  lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
   lines.push('**,help** — Show this command list.');
 
   return new EmbedBuilder()
@@ -278,6 +273,5 @@ module.exports = {
   ticketButtons,
   ticketEmbed,
   ticketPanelButtons,
-  ticketPanelEmbed,
   ticketTranscriptEmbed,
 };

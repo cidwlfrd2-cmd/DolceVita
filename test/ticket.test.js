@@ -3,7 +3,6 @@ const test = require('node:test');
 const {
   orderTicketModal,
   ticketPanelButtons,
-  ticketPanelEmbed,
   ticketEmbed,
   ticketButtons,
   reportTicketModal,
@@ -14,9 +13,9 @@ const {
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
+const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
 
-test('ticket panel contains the three requested buttons and an embed', () => {
-  assert.equal(ticketPanelEmbed().toJSON().title, 'Open a Ticket');
+test('ticket panel contains only the three requested buttons', () => {
   assert.deepEqual(
     ticketPanelButtons().toJSON().components.map((button) => button.label),
     ['order', 'report', 'others'],
@@ -143,6 +142,26 @@ test('ticketsetup shortcut is registered as an administrator command', () => {
   assert.equal(shortcut.default_member_permissions, '8');
 });
 
+test('ticket category setup slash command takes a category ID and requires administrator permission', () => {
+  const command = commands.find((entry) => entry.name === 'setupticketcategory');
+  assert.ok(command);
+  assert.equal(command.options[0].name, 'category_id');
+  assert.equal(command.options[0].required, true);
+  assert.equal(command.default_member_permissions, '8');
+});
+
+test('ticket message command parser recognizes category and transcript setup aliases', () => {
+  assert.deepEqual(parseTicketMessageCommand(',setupticketcategory 123456789012345678'), {
+    name: 'setupticketcategory',
+    args: ['123456789012345678'],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',set ticket_transcript 123456789012345678'), {
+    name: 'set_ticket_transcript',
+    args: ['123456789012345678'],
+  });
+  assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
+});
+
 test('help command lists registered commands, subcommands, and message shortcuts', () => {
   const embed = helpEmbed(commands).toJSON();
   assert.equal(commands.find((command) => command.name === 'help')?.description, 'List all bot commands.');
@@ -157,6 +176,9 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/stickymessage remove',
     ',ticketsetup',
     ',help',
+    '/setupticketcategory',
+    ',setupticketcategory',
+    ',set ticket_transcript',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
