@@ -1,38 +1,43 @@
 const sharp = require('sharp');
 
-const TILE_WIDTH = 640;
-const TILE_HEIGHT = 420;
 const GUTTER = 16;
 
 async function createProofCollage(imageBuffers) {
-  if (!Array.isArray(imageBuffers) || imageBuffers.length < 1 || imageBuffers.length > 5) {
-    throw new RangeError('A proof collage requires between one and five images.');
+  if (!Array.isArray(imageBuffers) || imageBuffers.length < 1 || imageBuffers.length > 2) {
+    throw new RangeError('A proof collage requires one or two images.');
   }
 
-  const columns = 1;
-  const rows = imageBuffers.length;
+  const maxImageWidth = imageBuffers.length === 1 ? 1600 : 800;
+  const maxImageHeight = imageBuffers.length === 1 ? 1200 : 900;
   const composites = [];
+  const dimensions = [];
 
   for (let index = 0; index < imageBuffers.length; index += 1) {
     const image = await sharp(imageBuffers[index], { limitInputPixels: 40_000_000 })
       .rotate()
-      .resize(TILE_WIDTH, TILE_HEIGHT, {
-        fit: 'contain',
-        background: { r: 0, g: 0, b: 0, alpha: 1 },
+      .resize({
+        width: maxImageWidth,
+        height: maxImageHeight,
+        fit: 'inside',
+        withoutEnlargement: true,
       })
       .png()
       .toBuffer();
+    const { width, height } = await sharp(image).metadata();
+    dimensions.push({ width, height });
     composites.push({
       input: image,
-      left: GUTTER + (index % columns) * (TILE_WIDTH + GUTTER),
-      top: GUTTER + Math.floor(index / columns) * (TILE_HEIGHT + GUTTER),
+      left: GUTTER + dimensions.slice(0, -1).reduce((total, size) => total + size.width + GUTTER, 0),
+      top: GUTTER,
     });
   }
 
+  const width = GUTTER + dimensions.reduce((total, size) => total + size.width + GUTTER, 0);
+  const height = GUTTER * 2 + Math.max(...dimensions.map((size) => size.height));
   return sharp({
     create: {
-      width: GUTTER + columns * (TILE_WIDTH + GUTTER),
-      height: GUTTER + rows * (TILE_HEIGHT + GUTTER),
+      width,
+      height,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 1 },
     },

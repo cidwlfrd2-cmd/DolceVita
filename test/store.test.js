@@ -4,7 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { OrderStore } = require('../src/store');
-const { orderEmbed, orderStatusEmbed } = require('../src/embeds');
+const { orderButtons, orderEmbed, orderStatusEmbed, queueEmbed } = require('../src/embeds');
+const { orderReference } = require('../src/order-reference');
 const { orderStatusLabel } = require('../src/order-status');
 
 function createStore() {
@@ -55,6 +56,32 @@ test('claim returns null when there are no pending orders', () => {
   assert.equal(store.claimNext('guild-1', 'staff-1'), null);
 });
 
+test('ticket product is displayed as the order reference while buttons retain the UUID', () => {
+  assert.equal(orderReference({ id: 'ORDER-LEGACY' }), 'ORDER-LEGACY');
+  const store = createStore();
+  const order = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-1',
+    sourceChannelId: 'source-1',
+    items: 'GAMECREDITS',
+    paymentMethod: 'GCASH',
+    supporterId: 'staff-1',
+    quantity: 1,
+    ticketProduct: 'GAMECREDITS',
+  });
+
+  assert.equal(orderReference(store.getOrder(order.id)), 'GAMECREDITS');
+  assert.deepEqual(
+    orderButtons(order).toJSON().components.map((button) => button.custom_id),
+    [
+      `order:processing:${order.id}`,
+      `order:complete:${order.id}`,
+      `order:cancel:${order.id}`,
+    ],
+  );
+  assert.match(queueEmbed([order]).toJSON().fields[0].name, /#GAMECREDITS/);
+});
+
 test('completed and cancelled statuses override processing in the order embed', () => {
   const order = {
     id: 'ORDER-1',
@@ -84,6 +111,7 @@ test('source-channel status labels reflect processing, complete, and cancelled t
 test('order status notification embed includes the order status and details', () => {
   const embed = orderStatusEmbed({
     id: 'ORDER-3',
+    ticketProduct: 'DEKOR',
     status: 'completed',
     processingStatus: 'processing',
     items: 'Coffee',
@@ -93,7 +121,7 @@ test('order status notification embed includes the order status and details', ()
   }).toJSON();
 
   assert.equal(embed.title, 'Order Status Update');
-  assert.match(embed.description, /ORDER-3.*Complete/);
+  assert.match(embed.description, /#DEKOR.*Complete/);
   assert.deepEqual(
     embed.fields.map(({ name, value }) => [name, value]),
     [

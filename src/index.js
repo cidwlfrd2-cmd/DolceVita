@@ -13,8 +13,11 @@ const {
   orderButtons,
   orderEmbed,
   orderStatusEmbed,
+  orderCompletionReminderEmbed,
   multiplicationEmbed,
   paymentReminderEmbed,
+  vouchEmbed,
+  voidedOrderEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderTicketModal,
@@ -30,9 +33,12 @@ const {
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
-const { ticketOwnerId } = require('./ticket-context');
+const { ticketOwnerId, ticketProduct } = require('./ticket-context');
+const { orderReference } = require('./order-reference');
+const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
+const { parseOrderTicketForm } = require('./order-ticket-form');
 const { multiplyAmounts } = require('./multiplication');
 const { replyThenDeleteCommand } = require('./message-command-actions');
 const commands = require('./commands');
@@ -47,6 +53,55 @@ const client = new Client({
 });
 const stickyRefreshes = new Map();
 const ticketClaimLocks = new Map();
+const scheduledVoidChecks = new Map();
+
+function scheduleVoidCheckForOrder(order) {
+  if (!order || order.status !== 'completed' || order.voidedAt) return;
+  const finishedAt = order.finishedAt ? new Date(order.finishedAt).getTime() : Date.now();
+  const delay = Math.max(0, finishedAt + 12 * 60 * 60 * 1000 - Date.now());
+  if (scheduledVoidChecks.has(order.id)) return;
+  const timeoutId = setTimeout(async () => {
+    scheduledVoidChecks.delete(order.id);
+    const currentOrder = store.getOrder(order.id);
+    if (!currentOrder || currentOrder.status !== 'completed' || currentOrder.voidedAt) return;
+    if (store.hasVouchSince(currentOrder.guildId, currentOrder.customerId, currentOrder.finishedAt)) return;
+    const settings = store.getSettings(currentOrder.guildId);
+    const channelId = settings?.voidedChannelId;
+    if (!channelId) return;
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || channel.guildId !== currentOrder.guildId || !channel.isTextBased() || typeof channel.send !== 'function') {
+        return;
+      }
+      const user = await client.users.fetch(currentOrder.customerId).catch(() => null);
+      const embed = voidedOrderEmbed(user ?? { id: currentOrder.customerId, username: `user-${currentOrder.customerId}` }, currentOrder.items ?? currentOrder.item ?? 'Unknown product', 'no vouch within 12hours', new Date());
+      await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+      if (settings?.voidedRoleId) {
+        const guild = channel.guild;
+        const role = await guild.roles.fetch(settings.voidedRoleId).catch(() => null);
+        if (role) {
+          const member = await guild.members.fetch(currentOrder.customerId).catch(() => null);
+          if (member && !member.roles.cache.has(role.id)) {
+            await member.roles.add(role);
+          }
+        }
+      }
+      store.markOrderVoided(currentOrder.id, 'no vouch within 12hours');
+    } catch (error) {
+      console.error(`Could not void order ${currentOrder.id} after 12 hours without a vouch:`, error);
+    }
+  }, delay);
+  scheduledVoidChecks.set(order.id, timeoutId);
+}
+
+async function restoreScheduledVoidChecks() {
+  const state = store.read();
+  for (const order of state.orders ?? []) {
+    if (order.status === 'completed' && !order.voidedAt) {
+      scheduleVoidCheckForOrder(order);
+    }
+  }
+}
 
 function memberHasRole(interaction, roleId) {
   const roles = interaction.member?.roles;
@@ -215,75 +270,81 @@ async function withTicketClaimLock(channelId, action) {
 async function createTicketChannel(interaction, type, orderForm, reportForm, othersForm) {
   const guild = interaction.guild;
   if (!guild) throw new Error('Tickets can only be created in a server.');
-  const settings = store.getSettings(interaction.guildId);
-  const ticketRoleIds = ticketAccessRoleIds(settings);
-  for (const roleId of ticketRoleIds) {
-    if (!guild.roles.cache.has(roleId)) {
-      throw new Error(`Configured ticket role ${roleId} no longer exists.`);
-    }
-  }
-  const permissionOverwrites = [
-    {
-      id: guild.roles.everyone.id,
-      deny: [PermissionFlagsBits.ViewChannel],
-    },
-    {
-      id: interaction.user.id,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-      ],
-    },
-    {
-      id: client.user.id,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.EmbedLinks,
-        PermissionFlagsBits.ManageChannels,
-      ],
-    },
-  ];
-  for (const roleId of ticketRoleIds) {
-    permissionOverwrites.push({
-      id: roleId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-      ],
-    });
-  }
-  let parent;
-  if (settings?.ticketCategoryId) {
-    parent = await fetchGuildChannelById(guild, settings.ticketCategoryId);
-    if (parent.type !== ChannelType.GuildCategory) {
-      throw new Error(`Configured ticket category ${settings.ticketCategoryId} is not a category.`);
-    }
-  }
+  return withTicketCreationLock(`${guild.id}:${interaction.user.id}`, async () => {
+    const channels = await guild.channels.fetch();
+    const existingTicket = findActiveTicket(channels, interaction.user.id);
+    if (existingTicket) return { channel: existingTicket, created: false };
 
-  const channel = await guild.channels.create({
-    name: ticketChannelName(
-      type,
-      interaction.user.username,
-      orderForm?.product ?? reportForm?.product ?? othersForm?.message,
-    ),
-    type: ChannelType.GuildText,
-    ...(parent ? { parent: parent.id } : {}),
-    topic: `ticket-owner:${interaction.user.id};ticket-type:${type}`,
-    permissionOverwrites,
-    reason: `${type} ticket opened by ${interaction.user.tag}`,
+    const settings = store.getSettings(interaction.guildId);
+    const ticketRoleIds = ticketAccessRoleIds(settings);
+    for (const roleId of ticketRoleIds) {
+      if (!guild.roles.cache.has(roleId)) {
+        throw new Error(`Configured ticket role ${roleId} no longer exists.`);
+      }
+    }
+    const permissionOverwrites = [
+      {
+        id: guild.roles.everyone.id,
+        deny: [PermissionFlagsBits.ViewChannel],
+      },
+      {
+        id: interaction.user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.AttachFiles,
+          PermissionFlagsBits.EmbedLinks,
+        ],
+      },
+      {
+        id: client.user.id,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.ManageChannels,
+        ],
+      },
+    ];
+    for (const roleId of ticketRoleIds) {
+      permissionOverwrites.push({
+        id: roleId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+      });
+    }
+    let parent;
+    if (settings?.ticketCategoryId) {
+      parent = await fetchGuildChannelById(guild, settings.ticketCategoryId);
+      if (parent.type !== ChannelType.GuildCategory) {
+        throw new Error(`Configured ticket category ${settings.ticketCategoryId} is not a category.`);
+      }
+    }
+
+    const channel = await guild.channels.create({
+      name: ticketChannelName(
+        type,
+        interaction.user.username,
+        orderForm?.product ?? reportForm?.product ?? othersForm?.message,
+      ),
+      type: ChannelType.GuildText,
+      ...(parent ? { parent: parent.id } : {}),
+      topic: `ticket-owner:${interaction.user.id};ticket-type:${type}${orderForm ? `;ticket-product:${orderForm.product}` : ''}`,
+      permissionOverwrites,
+      reason: `${type} ticket opened by ${interaction.user.tag}`,
+    });
+    await channel.send({
+      embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
+      components: [ticketButtons()],
+      allowedMentions: { parse: [] },
+    });
+    return { channel, created: true };
   });
-  await channel.send({
-    embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
-    components: [ticketButtons()],
-    allowedMentions: { parse: [] },
-  });
-  return channel;
 }
 
 async function handleCommand(interaction) {
@@ -359,6 +420,21 @@ async function handleCommand(interaction) {
     return interaction.reply({ content: `Closed ticket transcripts will be posted in ${channel}.`, ephemeral: true });
   }
 
+  if (interaction.commandName === 'set' && interaction.options.getSubcommand() === 'voided') {
+    const channel = interaction.options.getChannel('channel', true);
+    if (!channel.isTextBased() || typeof channel.send !== 'function' || channel.guildId !== interaction.guildId) {
+      return interaction.reply({ content: 'Choose a text channel in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { voidedChannelId: channel.id });
+    return interaction.reply({ content: `Voided-order alerts will be posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'set' && interaction.options.getSubcommand() === 'voided_role') {
+    const role = interaction.options.getRole('role', true);
+    store.setSettings(interaction.guildId, { voidedRoleId: role.id });
+    return interaction.reply({ content: `${role} will be granted to members marked as voided.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'setowner') {
     if (interaction.guild?.ownerId !== interaction.user.id) {
       return interaction.reply({ content: 'Only the server owner can set the order owner role.', ephemeral: true });
@@ -407,6 +483,7 @@ async function handleCommand(interaction) {
       paymentMethod: interaction.options.getString('payment_method', true),
       supporterId: interaction.options.getUser('supporter', true).id,
       quantity: interaction.options.getInteger('quantity') ?? 1,
+      ticketProduct: await ticketProduct(interaction.channel),
     });
     const channel = await client.channels.fetch(orderChannelId);
     const message = await channel.send({
@@ -415,7 +492,7 @@ async function handleCommand(interaction) {
       allowedMentions: { parse: [] },
     });
     store.setOrderMessage(order.id, channel.id, message.id);
-    return interaction.editReply(`Order #${order.id} was added to ${channel}.`);
+    return interaction.editReply(`Order #${orderReference(order)} was added to ${channel}.`);
   }
 
   if (interaction.commandName === 'queue') {
@@ -450,7 +527,7 @@ async function handleCommand(interaction) {
     } catch (error) {
       console.error('Could not refresh claimed order post:', error);
     }
-    return interaction.reply({ content: `You claimed order #${order.id}: **${order.items ?? order.item}** × ${order.quantity}.`, ephemeral: true });
+    return interaction.reply({ content: `You claimed order #${orderReference(order)}: **${order.items ?? order.item}** × ${order.quantity}.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'message') {
@@ -478,11 +555,14 @@ async function handleCommand(interaction) {
     }
     const items = interaction.options.getString('items', true).trim();
     const feedback = interaction.options.getString('feedback', true).trim();
-    const proofs = ['proof', 'proof2', 'proof3', 'proof4', 'proof5']
+    const proofs = ['proof', 'proof2']
       .map((name) => interaction.options.getAttachment(name))
       .filter(Boolean);
     if (!items || !feedback) {
       return interaction.reply({ content: 'Items and feedback cannot be blank.', ephemeral: true });
+    }
+    if (proofs.length < 1) {
+      return interaction.reply({ content: 'Please attach at least one proof image.', ephemeral: true });
     }
     const invalidProof = proofs.find((attachment) => (
       !attachment.contentType?.startsWith('image/')
@@ -495,34 +575,23 @@ async function handleCommand(interaction) {
     await interaction.deferReply({ ephemeral: true });
     const channel = await client.channels.fetch(settings.vouchChannelId);
     let proofCollage = null;
-    if (proofs.length) {
-      try {
-        const imageBuffers = [];
-        for (const proof of proofs) {
-          const response = await fetch(proof.url, { signal: AbortSignal.timeout(15000) });
-          if (!response.ok) throw new Error(`Proof download returned HTTP ${response.status}.`);
-          imageBuffers.push(Buffer.from(await response.arrayBuffer()));
-        }
-        proofCollage = await createProofCollage(imageBuffers);
-      } catch (error) {
-        console.error('Could not create vouch proof collage:', error);
-        return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
+    try {
+      const imageBuffers = [];
+      for (const proof of proofs) {
+        const response = await fetch(proof.url, { signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`Proof download returned HTTP ${response.status}.`);
+        imageBuffers.push(Buffer.from(await response.arrayBuffer()));
       }
+      proofCollage = await createProofCollage(imageBuffers);
+    } catch (error) {
+      console.error('Could not create vouch proof collage:', error);
+      return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
     }
-    const embed = new EmbedBuilder()
-      .setColor(0x35a16b)
-      .setTitle('Customer Vouch')
-      .setDescription(`<@${interaction.user.id}> vouched for Dolce Vita, tysm! buy again!`)
-      .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-      .addFields(
-        { name: 'Items', value: items },
-        { name: 'Feedback', value: feedback },
-      )
-      .setTimestamp();
-    if (proofCollage) embed.setImage('attachment://vouch-proofs.png');
+    const embed = vouchEmbed(interaction.user, items, feedback);
+    embed.setImage('attachment://vouch-proofs.png');
     await channel.send({
       embeds: [embed],
-      ...(proofCollage ? { files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }] } : {}),
+      files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }],
       allowedMentions: { parse: [] },
     });
     store.addVouch({ guildId: interaction.guildId, userId: interaction.user.id, items });
@@ -712,8 +781,11 @@ async function handleTicketModal(interaction) {
       return interaction.reply({ content: 'Please describe your partnership or concern.', ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
-    const channel = await createTicketChannel(interaction, 'others', undefined, undefined, othersForm);
-    return interaction.editReply(`Your others ticket is ready: ${channel}`);
+    const result = await createTicketChannel(interaction, 'others', undefined, undefined, othersForm);
+    if (!result.created) {
+      return interaction.editReply(`You already have an active ticket: ${result.channel}. Close it before opening another.`);
+    }
+    return interaction.editReply(`Your others ticket is ready: ${result.channel}`);
   }
 
   if (interaction.customId === 'ticket:report-form') {
@@ -726,21 +798,28 @@ async function handleTicketModal(interaction) {
       return interaction.reply({ content: 'Please fill in all report form fields.', ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
-    const channel = await createTicketChannel(interaction, 'report', undefined, reportForm);
-    return interaction.editReply(`Your report ticket is ready: ${channel}`);
+    const result = await createTicketChannel(interaction, 'report', undefined, reportForm);
+    if (!result.created) {
+      return interaction.editReply(`You already have an active ticket: ${result.channel}. Close it before opening another.`);
+    }
+    return interaction.editReply(`Your report ticket is ready: ${result.channel}`);
   }
 
-  const orderForm = {
+  const submittedOrderForm = {
     product: interaction.fields.getTextInputValue('ticket-product').trim(),
     quantity: interaction.fields.getTextInputValue('ticket-quantity').trim(),
     paymentMethod: interaction.fields.getTextInputValue('ticket-payment-method').trim(),
   };
-  if (Object.values(orderForm).some((value) => !value)) {
-    return interaction.reply({ content: 'Please fill in all order form fields.', ephemeral: true });
+  const result = parseOrderTicketForm(submittedOrderForm);
+  if (result.error) {
+    return interaction.reply({ content: result.error, ephemeral: true });
   }
   await interaction.deferReply({ ephemeral: true });
-  const channel = await createTicketChannel(interaction, 'order', orderForm);
-  return interaction.editReply(`Your order ticket is ready: ${channel}`);
+  const ticketResult = await createTicketChannel(interaction, 'order', result.value);
+  if (!ticketResult.created) {
+    return interaction.editReply(`You already have an active ticket: ${ticketResult.channel}. Close it before opening another.`);
+  }
+  return interaction.editReply(`Your order ticket is ready: ${ticketResult.channel}`);
 }
 
 async function handleButton(interaction) {
@@ -760,7 +839,11 @@ async function handleButton(interaction) {
     allowedMentions: { parse: [] },
   });
   const statusEmbed = orderStatusEmbed(order);
+  const completionReminderEmbed = action === 'complete' ? orderCompletionReminderEmbed() : null;
   const notificationFailures = [];
+  if (action === 'complete') {
+    scheduleVoidCheckForOrder(order);
+  }
   if (order.sourceChannelId) {
     try {
       const sourceChannel = await client.channels.fetch(order.sourceChannelId);
@@ -774,6 +857,12 @@ async function handleButton(interaction) {
         embeds: [statusEmbed],
         allowedMentions: { parse: [] },
       });
+      if (completionReminderEmbed) {
+        await sourceChannel.send({
+          embeds: [completionReminderEmbed],
+          allowedMentions: { parse: [] },
+        });
+      }
     } catch (error) {
       console.error(`Could not send status update for order ${order.id} to source channel ${order.sourceChannelId}:`, error);
       notificationFailures.push(`the original order channel <#${order.sourceChannelId}>`);
@@ -782,6 +871,9 @@ async function handleButton(interaction) {
   try {
     const customer = await client.users.fetch(order.customerId);
     await customer.send({ embeds: [statusEmbed], allowedMentions: { parse: [] } });
+    if (completionReminderEmbed) {
+      await customer.send({ embeds: [completionReminderEmbed], allowedMentions: { parse: [] } });
+    }
   } catch (error) {
     console.error(`Could not DM order status update for order ${order.id} to customer ${order.customerId}:`, error);
     notificationFailures.push('the order submitter by DM');
@@ -819,8 +911,9 @@ async function handlePaymentButton(interaction) {
   }
 }
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  await restoreScheduledVoidChecks();
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -900,6 +993,48 @@ client.on('messageCreate', async (message) => {
       } else {
         await postTicketPanel(message.channel);
       }
+      return;
+    }
+    if (messageCommand?.name === 'set_voided') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can configure the voided channel.');
+        return;
+      }
+      if (messageCommand.args.length !== 1) {
+        await message.reply('Usage: `,setvoided <channel id>`');
+        return;
+      }
+      let channel;
+      try {
+        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
+      } catch (error) {
+        await message.reply(error.message);
+        return;
+      }
+      if (!channel.isTextBased() || typeof channel.send !== 'function') {
+        await message.reply('That ID is not a sendable text channel in this server.');
+        return;
+      }
+      store.setSettings(message.guild.id, { voidedChannelId: channel.id });
+      await message.reply(`Voided-order alerts will be posted in ${channel}.`);
+      return;
+    }
+    if (messageCommand?.name === 'set_role_voided') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can configure the voided role.');
+        return;
+      }
+      if (messageCommand.args.length !== 1) {
+        await message.reply('Usage: `,setrolevoided <role id>`');
+        return;
+      }
+      const role = message.guild.roles.cache.get(messageCommand.args[0]) ?? await message.guild.roles.fetch(messageCommand.args[0]).catch(() => null);
+      if (!role) {
+        await message.reply('That ID is not a role in this server.');
+        return;
+      }
+      store.setSettings(message.guild.id, { voidedRoleId: role.id });
+      await message.reply(`${role} will be granted to members marked as voided.`);
       return;
     }
     if (messageCommand?.name === 'setupticketcategory' || messageCommand?.name === 'set_ticket_transcript') {

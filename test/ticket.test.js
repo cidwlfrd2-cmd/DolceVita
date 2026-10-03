@@ -11,15 +11,20 @@ const {
   helpEmbed,
   multiplicationEmbed,
   paymentReminderEmbed,
+  vouchEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
+  orderCompletionReminderEmbed,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
-const { ticketOwnerId } = require('../src/ticket-context');
+const { ticketOwnerId, ticketProduct } = require('../src/ticket-context');
+const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
 const { ticketAccessRoleIds, ticketManagerRoleIds } = require('../src/ticket-permissions');
+const { voidedOrderEmbed } = require('../src/embeds');
+const { parseOrderTicketForm } = require('../src/order-ticket-form');
 const { multiplyAmounts } = require('../src/multiplication');
 const { replyThenDeleteCommand } = require('../src/message-command-actions');
 
@@ -44,6 +49,47 @@ test('order ticket modal requires the product, quantity, and payment method fiel
       { label: 'PAYMENT METHOD', required: true },
     ],
   );
+  assert.deepEqual(
+    modal.components.map((row) => row.components[0].placeholder),
+    ['DEKOR / GAMECREDITS / ROBUX', '1-1000', 'GCASH / BANKTRANS / PAYMAYA'],
+  );
+});
+
+test('order ticket form accepts only listed products and payment methods with quantities from 1 to 1000', () => {
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'gamecredits',
+    quantity: '0007',
+    paymentMethod: 'gcash',
+  }), {
+    value: { product: 'GAMECREDITS', quantity: '7', paymentMethod: 'GCASH' },
+  });
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'DEKOR',
+    quantity: '1000',
+    paymentMethod: 'PAYMAYA',
+  }), {
+    value: { product: 'DEKOR', quantity: '1000', paymentMethod: 'PAYMAYA' },
+  });
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'OTHER',
+    quantity: '3',
+    paymentMethod: 'GCASH',
+  }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, or ROBUX.' });
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'ROBUX',
+    quantity: '1001',
+    paymentMethod: 'GCASH',
+  }), { error: 'QUANTITY must be a whole number from 1 to 1000.' });
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'ROBUX',
+    quantity: '1.5',
+    paymentMethod: 'GCASH',
+  }), { error: 'QUANTITY must be a whole number from 1 to 1000.' });
+  assert.deepEqual(parseOrderTicketForm({
+    product: 'ROBUX',
+    quantity: '3',
+    paymentMethod: 'CARD',
+  }), { error: 'PAYMENT METHOD must be GCASH, BANKTRANS, or PAYMAYA.' });
 });
 
 test('report ticket modal requires the product, issue, and rules confirmation', () => {
@@ -173,11 +219,61 @@ test('ticket owner lookup only recognizes active ticket topics', () => {
   assert.equal(ticketOwnerId(null), null);
 });
 
+test('order ticket product comes from the topic or the original ticket embed', async () => {
+  assert.equal(await ticketProduct({
+    topic: 'ticket-owner:123;ticket-type:order;ticket-product:GAMECREDITS',
+  }), 'GAMECREDITS');
+
+  const messages = new Map([['message-1', {
+    embeds: [{
+      title: 'ORDER TICKET',
+      fields: [{ name: 'PRODUCT', value: 'ROBUX' }],
+    }],
+  }]]);
+  assert.equal(await ticketProduct({
+    topic: 'ticket-owner:123;ticket-type:order',
+    messages: { fetch: async () => messages },
+  }), 'ROBUX');
+
+  assert.equal(await ticketProduct({ topic: 'ticket-owner:123;ticket-type:report' }), null);
+});
+
+test('ticket creation finds existing tickets and serializes simultaneous submissions', async () => {
+  const existingTicket = { id: 'ticket-1', topic: 'ticket-owner:123;ticket-type:report' };
+  assert.equal(findActiveTicket(new Map([[existingTicket.id, existingTicket]]), '123'), existingTicket);
+  assert.equal(findActiveTicket(new Map([[existingTicket.id, existingTicket]]), '456'), null);
+
+  const channels = new Map();
+  const attempts = await Promise.all([1, 2].map((attempt) => withTicketCreationLock('guild:user', async () => {
+    if (findActiveTicket(channels, '123')) return false;
+    await Promise.resolve();
+    const ticket = { id: `ticket-${attempt}`, topic: 'ticket-owner:123;ticket-type:order' };
+    channels.set(ticket.id, ticket);
+    return true;
+  })));
+
+  assert.equal(attempts.filter(Boolean).length, 1);
+  assert.equal(channels.size, 1);
+});
+
 test('ticket setup is registered as an administrator subcommand', () => {
   const ticketCommand = commands.find((command) => command.name === 'ticket');
   assert.ok(ticketCommand);
   assert.equal(ticketCommand.options[0].name, 'setup');
   assert.equal(ticketCommand.default_member_permissions, '8');
+});
+
+test('/vouch accepts one required proof and an optional second proof', () => {
+  const command = commands.find((entry) => entry.name === 'vouch');
+  const proofs = command.options.filter((option) => option.type === 11);
+
+  assert.deepEqual(
+    proofs.map(({ name, required }) => ({ name, required })),
+    [
+      { name: 'proof', required: true },
+      { name: 'proof2', required: false },
+    ],
+  );
 });
 
 test('/solving is registered with two required numeric amounts', () => {
@@ -245,6 +341,71 @@ test('payment reminder embed supports servers without a custom icon', () => {
   assert.equal(embed.thumbnail, undefined);
 });
 
+test('vouch embed includes the requested warranty slip as its description', () => {
+  const embed = vouchEmbed({
+    displayName: 'Alex',
+    displayAvatarURL: () => 'https://example.test/avatar.png',
+  }, 'Robux', 'Great service!').toJSON();
+
+  assert.equal(embed.description, [
+    '## WARRANTY SLIP',
+    '**: Applies only to** `NITRO, PREMSUBS, BOOSTS`',
+    '**: Ignore this if you purchased** `ROBUX, GAMECREDITS`',
+    '**: Show this warranty if your item get revoked**',
+  ].join('\n'));
+  assert.deepEqual(embed.fields.map(({ name, value }) => [name, value]), [
+    ['Items', 'Robux'],
+    ['Feedback', 'Great service!'],
+  ]);
+});
+
+test('completed order reminder embed has no title and the warranty policy description', () => {
+  const embed = orderCompletionReminderEmbed().toJSON();
+
+  assert.equal(embed.title, undefined);
+  assert.equal(embed.description, [
+    '**REMINDERS : WARRANTY POLICY!!**',
+    '› All completed orders come with a 12-hours warranty.',
+    '› Replacements will only be provided for verified issues covered by warranty.',
+    '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
+  ].join('\n'));
+});
+
+test('message command parser recognizes the voided channel and role shortcuts', () => {
+  assert.deepEqual(parseTicketMessageCommand(',setvoided 1234567890'), {
+    name: 'set_voided',
+    args: ['1234567890'],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',setrolevoided 9876543210'), {
+    name: 'set_role_voided',
+    args: ['9876543210'],
+  });
+});
+
+test('voided order embed includes the required title, issue details, and footer', () => {
+  const date = new Date('2026-10-03T12:34:56Z');
+  const embed = voidedOrderEmbed({
+    id: '1234567890',
+    username: 'alice',
+    tag: 'alice#0001',
+  }, 'ROBUX', 'no vouch within 12hours', date).toJSON();
+
+  assert.equal(embed.title, 'vouch / order voided');
+  assert.equal(embed.description, [
+    '<@1234567890> has been marked as **voided**',
+    '',
+    '**user**',
+    '@alice - 1234567890',
+    '',
+    '**product**',
+    'ROBUX',
+    '',
+    '**reason**',
+    'no vouch within 12hours',
+  ].join('\n'));
+  assert.equal(embed.footer.text, 'voided by dolce vita - 10/3/2026 - 12:34:56 PM');
+});
+
 test('payment details embed includes GCash instructions and the attached payment image', () => {
   const embed = paymentDetailsEmbed().toJSON();
   assert.equal(embed.title, undefined);
@@ -255,10 +416,10 @@ test('payment details embed includes GCash instructions and the attached payment
   assert.deepEqual(embed.image, { url: 'attachment://gcash-payment.png' });
 });
 
-test('payment reminder has yes and no buttons in the requested order', () => {
+test('payment reminder has pay and no buttons in the requested order', () => {
   const buttons = paymentReminderButtons().toJSON().components;
   assert.deepEqual(buttons.map(({ custom_id, label }) => [label, custom_id]), [
-    ['yes', 'payment:yes'],
+    ['pay', 'payment:yes'],
     ['no', 'payment:no'],
   ]);
 });

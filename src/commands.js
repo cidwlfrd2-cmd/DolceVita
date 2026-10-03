@@ -35,7 +35,22 @@ module.exports = [
         .setName('channel')
         .setDescription('Channel for closed ticket transcripts')
         .setRequired(true)
-        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))),
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('voided')
+      .setDescription('Choose where voided-order alerts are posted.')
+      .addChannelOption((option) => option
+        .setName('channel')
+        .setDescription('Channel for voided-order alerts')
+        .setRequired(true)
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('voided_role')
+      .setDescription('Choose the role granted when an order is marked voided.')
+      .addRoleOption((option) => option
+        .setName('role')
+        .setDescription('Role granted to users marked as voided')
+        .setRequired(true))),
   new SlashCommandBuilder()
     .setName('setowner')
     .setDescription('Choose the role allowed to manage order buttons.')
@@ -126,19 +141,11 @@ module.exports = [
       .setMaxLength(1024))
     .addAttachmentOption((option) => option
       .setName('proof')
-      .setDescription('First proof image'))
+      .setDescription('First proof image')
+      .setRequired(true))
     .addAttachmentOption((option) => option
       .setName('proof2')
-      .setDescription('Second proof image'))
-    .addAttachmentOption((option) => option
-      .setName('proof3')
-      .setDescription('Third proof image'))
-    .addAttachmentOption((option) => option
-      .setName('proof4')
-      .setDescription('Fourth proof image'))
-    .addAttachmentOption((option) => option
-      .setName('proof5')
-      .setDescription('Fifth proof image')),
+      .setDescription('Second proof image')),
   new SlashCommandBuilder()
     .setName('checkvouch')
     .setDescription('Check a user vouch history.')

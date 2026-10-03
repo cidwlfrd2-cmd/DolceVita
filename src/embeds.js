@@ -8,6 +8,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const { orderStatusLabel } = require('./order-status');
+const { orderReference } = require('./order-reference');
 
 const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
@@ -39,7 +40,7 @@ function orderStatusEmbed(order) {
   return new EmbedBuilder()
     .setColor(colors[status])
     .setTitle('Order Status Update')
-    .setDescription(`Your order **#${order.id}** is now **${status}**.`)
+    .setDescription(`Your order **#${orderReference(order)}** is now **${status}**.`)
     .addFields(
       { name: 'Items', value: String(order.items ?? order.item), inline: true },
       { name: 'Quantity', value: String(order.quantity), inline: true },
@@ -47,6 +48,29 @@ function orderStatusEmbed(order) {
       { name: 'Submitted in', value: order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel' },
     )
     .setTimestamp();
+}
+
+function voidedOrderEmbed(user, product, reason, markedAt = new Date()) {
+  const username = user?.username ? `@${user.username}` : '@unknown';
+  const userId = user?.id ?? 'unknown';
+  const date = new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(markedAt);
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(markedAt);
+  return new EmbedBuilder()
+    .setColor(0xc94c4c)
+    .setTitle('vouch / order voided')
+    .setDescription([
+      `${user?.id ? `<@${user.id}>` : '@user'} has been marked as **voided**`,
+      '',
+      '**user**',
+      `${username} - ${userId}`,
+      '',
+      '**product**',
+      String(product ?? 'Unknown product'),
+      '',
+      '**reason**',
+      String(reason ?? 'no vouch within 12hours'),
+    ].join('\n'))
+    .setFooter({ text: `voided by dolce vita - ${date} - ${time}` });
 }
 
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
@@ -64,6 +88,35 @@ function paymentReminderEmbed(serverIconUrl) {
   return embed;
 }
 
+function vouchEmbed(user, items, feedback) {
+  return new EmbedBuilder()
+    .setColor(0x35a16b)
+    .setTitle('Customer Vouch')
+    .setDescription([
+      '## WARRANTY SLIP',
+      '**: Applies only to** `NITRO, PREMSUBS, BOOSTS`',
+      '**: Ignore this if you purchased** `ROBUX, GAMECREDITS`',
+      '**: Show this warranty if your item get revoked**',
+    ].join('\n'))
+    .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
+    .addFields(
+      { name: 'Items', value: items },
+      { name: 'Feedback', value: feedback },
+    )
+    .setTimestamp();
+}
+
+function orderCompletionReminderEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x35a16b)
+    .setDescription([
+      '**REMINDERS : WARRANTY POLICY!!**',
+      '› All completed orders come with a 12-hours warranty.',
+      '› Replacements will only be provided for verified issues covered by warranty.',
+      '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
+    ].join('\n'));
+}
+
 function paymentDetailsEmbed() {
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -75,7 +128,7 @@ function paymentReminderButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('payment:yes')
-      .setLabel('yes')
+      .setLabel('pay')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('payment:no')
@@ -113,7 +166,7 @@ function queueEmbed(orders) {
 
   for (const order of orders.slice(0, 25)) {
     embed.addFields({
-      name: `#${order.id} - ${LABELS[order.status]}`,
+      name: `#${orderReference(order)} - ${LABELS[order.status]}`,
       value: `**${order.items ?? order.item}** x ${order.quantity} - <@${order.customerId}>`,
       inline: false,
     });
@@ -181,7 +234,8 @@ function orderTicketModal() {
           .setLabel('PRODUCT')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(1024),
+          .setMaxLength(1024)
+          .setPlaceholder('DEKOR / GAMECREDITS / ROBUX'),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -189,7 +243,8 @@ function orderTicketModal() {
           .setLabel('QUANTITY')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(100),
+          .setMaxLength(4)
+          .setPlaceholder('1-1000'),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -197,7 +252,8 @@ function orderTicketModal() {
           .setLabel('PAYMENT METHOD')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(1024),
+          .setMaxLength(1024)
+          .setPlaceholder('GCASH / BANKTRANS / PAYMAYA'),
       ),
     );
 }
@@ -329,8 +385,11 @@ module.exports = {
   orderButtons,
   orderEmbed,
   orderStatusEmbed,
+  voidedOrderEmbed,
+  orderCompletionReminderEmbed,
   multiplicationEmbed,
   paymentReminderEmbed,
+  vouchEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderTicketModal,

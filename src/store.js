@@ -53,6 +53,12 @@ class OrderStore {
       .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
   }
 
+  hasVouchSince(guildId, userId, sinceDate) {
+    const threshold = new Date(sinceDate).getTime();
+    return this.listVouches(guildId, userId)
+      .some((vouch) => new Date(vouch.createdAt).getTime() >= threshold);
+  }
+
   getStickyMessage(guildId, channelId) {
     return this.read().stickyMessages?.[`${guildId}:${channelId}`] ?? null;
   }
@@ -77,10 +83,11 @@ class OrderStore {
     return stickyMessage;
   }
 
-  addOrder({ guildId, customerId, sourceChannelId, items, paymentMethod, supporterId, quantity }) {
+  addOrder({ guildId, customerId, sourceChannelId, items, paymentMethod, supporterId, quantity, ticketProduct }) {
     const state = this.read();
     const order = {
       id: randomUUID().toUpperCase(),
+      ...(ticketProduct ? { ticketProduct } : {}),
       guildId,
       customerId,
       sourceChannelId,
@@ -155,8 +162,27 @@ class OrderStore {
     if (!order || !['pending', 'claimed'].includes(order.status)) return null;
     order.status = status;
     order.finishedAt = new Date().toISOString();
+    if (status === 'cancelled') {
+      order.voidedAt = null;
+      order.voidedReason = null;
+    }
     this.write(state);
     return order;
+  }
+
+  markOrderVoided(orderId, reason) {
+    const state = this.read();
+    const order = state.orders.find((entry) => entry.id === orderId);
+    if (!order || order.voidedAt) return null;
+    order.voidedAt = new Date().toISOString();
+    order.voidedReason = reason;
+    this.write(state);
+    return order;
+  }
+
+  listCompleted(guildId) {
+    return this.read().orders
+      .filter((order) => order.guildId === guildId && order.status === 'completed');
   }
 }
 
