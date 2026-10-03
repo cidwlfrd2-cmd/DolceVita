@@ -145,4 +145,14 @@ module.exports = [
         .setName('channel')
         .setDescription('Channel to clear; defaults to this channel')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))),
+  new SlashCommandBuilder()
+    .setName('ticket')
+    .setDescription('Set up the server ticket panel.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((subcommand) => subcommand
+      .setName('setup')
+      .setDescription('Post the ticket panel in this channel.')
+      .addRoleOption((option) => option
+        .setName('staff_role')
+        .setDescription('Optional role that can view and manage tickets'))),
 ].map((command) => command.toJSON());

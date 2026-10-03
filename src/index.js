@@ -1,19 +1,33 @@
 require('dotenv').config();
 
 const {
+  ChannelType,
   Client,
   EmbedBuilder,
   GatewayIntentBits,
   PermissionFlagsBits,
 } = require('discord.js');
 const { OrderStore } = require('./store');
-const { orderButtons, orderEmbed, queueEmbed } = require('./embeds');
+const {
+  orderButtons,
+  orderEmbed,
+  orderTicketModal,
+  othersTicketModal,
+  queueEmbed,
+  reportTicketModal,
+  ticketButtons,
+  ticketEmbed,
+  ticketPanelButtons,
+  ticketPanelEmbed,
+} = require('./embeds');
 const { createProofCollage } = require('./vouch-proofs');
+const { ticketChannelName } = require('./ticket-names');
 const commands = require('./commands');
 
 const store = new OrderStore();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 const stickyRefreshes = new Map();
+const ticketClaimLocks = new Map();
 
 function memberHasRole(interaction, roleId) {
   const roles = interaction.member?.roles;
@@ -93,7 +107,103 @@ async function refreshStickyMessage(message) {
   }
 }
 
+async function withTicketClaimLock(channelId, action) {
+  const previous = ticketClaimLocks.get(channelId) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  ticketClaimLocks.set(channelId, current);
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+    if (ticketClaimLocks.get(channelId) === current) ticketClaimLocks.delete(channelId);
+  }
+}
+
+async function createTicketChannel(interaction, type, orderForm, reportForm, othersForm) {
+  const guild = interaction.guild;
+  if (!guild) throw new Error('Tickets can only be created in a server.');
+  const settings = store.getSettings(interaction.guildId);
+  const ticketRoleIds = [settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean);
+  for (const roleId of ticketRoleIds) {
+    if (!guild.roles.cache.has(roleId)) {
+      throw new Error(`Configured ticket role ${roleId} no longer exists.`);
+    }
+  }
+  const permissionOverwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [PermissionFlagsBits.ViewChannel],
+    },
+    {
+      id: interaction.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+      ],
+    },
+    {
+      id: client.user.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.ManageChannels,
+      ],
+    },
+  ];
+  for (const roleId of ticketRoleIds) {
+    permissionOverwrites.push({
+      id: roleId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    });
+  }
+
+  const channel = await guild.channels.create({
+    name: ticketChannelName(
+      type,
+      interaction.user.username,
+      orderForm?.product ?? reportForm?.product ?? othersForm?.message,
+    ),
+    type: ChannelType.GuildText,
+    topic: `ticket-owner:${interaction.user.id};ticket-type:${type}`,
+    permissionOverwrites,
+    reason: `${type} ticket opened by ${interaction.user.tag}`,
+  });
+  await channel.send({
+    embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
+    components: [ticketButtons()],
+    allowedMentions: { parse: [] },
+  });
+  return channel;
+}
+
 async function handleCommand(interaction) {
+  if (interaction.commandName === 'ticket' && interaction.options.getSubcommand() === 'setup') {
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+      return interaction.reply({ content: 'Run `/ticket setup` in a server text channel.', ephemeral: true });
+    }
+    const staffRole = interaction.options.getRole('staff_role');
+    if (staffRole) store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
+    await channel.send({
+      embeds: [ticketPanelEmbed()],
+      components: [ticketPanelButtons()],
+    });
+    return interaction.reply({ content: `Ticket panel posted in ${channel}.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'setup') {
     const channel = interaction.options.getChannel('channel');
     const staffRole = interaction.options.getRole('staff_role');
@@ -335,6 +445,119 @@ async function handleCommand(interaction) {
   }
 }
 
+async function handleTicketButton(interaction) {
+  if (interaction.customId === 'ticket:order') {
+    return interaction.showModal(orderTicketModal());
+  }
+  if (interaction.customId === 'ticket:report') {
+    return interaction.showModal(reportTicketModal());
+  }
+  if (interaction.customId === 'ticket:others') {
+    return interaction.showModal(othersTicketModal());
+  }
+  if (interaction.customId === 'ticket:claim') {
+    const channel = interaction.channel;
+    const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
+    if (!channel || !ownerMatch) {
+      return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
+    }
+    const settings = store.getSettings(interaction.guildId);
+    const ticketRoleIds = [...new Set([settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean))];
+    if (!ticketRoleIds.some((roleId) => memberHasRole(interaction, roleId))) {
+      return interaction.reply({ content: 'Only members with the configured ticket staff or owner role can claim tickets.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    return withTicketClaimLock(channel.id, async () => {
+      const currentChannel = await channel.guild.channels.fetch(channel.id);
+      if (currentChannel.name.startsWith('closed-')) {
+        return interaction.editReply('This ticket has already been closed.');
+      }
+      const claimedMatch = currentChannel.topic?.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
+      if (claimedMatch) {
+        return interaction.editReply(`This ticket has already been claimed by <@${claimedMatch[1]}>.`);
+      }
+
+      for (const roleId of ticketRoleIds) {
+        await currentChannel.permissionOverwrites.edit(roleId, {
+          SendMessages: false,
+          SendMessagesInThreads: false,
+        });
+      }
+      await currentChannel.permissionOverwrites.edit(interaction.user.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        SendMessagesInThreads: true,
+        ReadMessageHistory: true,
+      });
+      await currentChannel.setTopic(`${currentChannel.topic};ticket-claimed:${interaction.user.id}`);
+      await interaction.message.edit({
+        content: `Claimed by <@${interaction.user.id}>`,
+        components: [ticketButtons(true)],
+        allowedMentions: { parse: [] },
+      });
+      return interaction.editReply('You claimed this ticket. Other ticket staff can view it but cannot send messages.');
+    });
+  }
+  if (interaction.customId === 'ticket:close') {
+    const channel = interaction.channel;
+    const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
+    if (!channel || !ownerMatch) {
+      return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
+    }
+    const settings = store.getSettings(interaction.guildId);
+    const ticketRoleIds = [settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean);
+    const canClose = interaction.user.id !== ownerMatch[1]
+      && ticketRoleIds.some((roleId) => memberHasRole(interaction, roleId));
+    if (!canClose) {
+      return interaction.reply({ content: 'Only the configured ticket staff or owner role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
+    }
+    await channel.permissionOverwrites.edit(ownerMatch[1], { SendMessages: false });
+    if (!channel.name.startsWith('closed-')) await channel.setName(`closed-${channel.name}`.slice(0, 100));
+    return interaction.update({ content: 'This ticket has been closed.', components: [] });
+  }
+}
+
+async function handleTicketModal(interaction) {
+  if (interaction.customId === 'ticket:others-form') {
+    const othersForm = {
+      message: interaction.fields.getTextInputValue('ticket-others-message').trim(),
+    };
+    if (!othersForm.message) {
+      return interaction.reply({ content: 'Please describe your partnership or concern.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const channel = await createTicketChannel(interaction, 'others', undefined, undefined, othersForm);
+    return interaction.editReply(`Your others ticket is ready: ${channel}`);
+  }
+
+  if (interaction.customId === 'ticket:report-form') {
+    const reportForm = {
+      product: interaction.fields.getTextInputValue('ticket-report-product').trim(),
+      issue: interaction.fields.getTextInputValue('ticket-report-issue').trim(),
+      readRules: interaction.fields.getTextInputValue('ticket-report-rules').trim(),
+    };
+    if (Object.values(reportForm).some((value) => !value)) {
+      return interaction.reply({ content: 'Please fill in all report form fields.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const channel = await createTicketChannel(interaction, 'report', undefined, reportForm);
+    return interaction.editReply(`Your report ticket is ready: ${channel}`);
+  }
+
+  const orderForm = {
+    product: interaction.fields.getTextInputValue('ticket-product').trim(),
+    quantity: interaction.fields.getTextInputValue('ticket-quantity').trim(),
+    paymentMethod: interaction.fields.getTextInputValue('ticket-payment-method').trim(),
+  };
+  if (Object.values(orderForm).some((value) => !value)) {
+    return interaction.reply({ content: 'Please fill in all order form fields.', ephemeral: true });
+  }
+  await interaction.deferReply({ ephemeral: true });
+  const channel = await createTicketChannel(interaction, 'order', orderForm);
+  return interaction.editReply(`Your order ticket is ready: ${channel}`);
+}
+
 async function handleButton(interaction) {
   if (!canUseOrderButtons(interaction)) {
     return interaction.reply({ content: 'Only the configured owner role can update order buttons.', ephemeral: true });
@@ -360,7 +583,15 @@ client.once('ready', () => {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) await handleCommand(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
+    else if (interaction.isModalSubmit() && [
+      'ticket:order-form',
+      'ticket:report-form',
+      'ticket:others-form',
+    ].includes(interaction.customId)) {
+      await handleTicketModal(interaction);
+    }
   } catch (error) {
     console.error('Interaction failed:', error);
     const response = { content: 'Something went wrong while handling that request. Please try again.', ephemeral: true };
