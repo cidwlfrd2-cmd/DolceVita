@@ -165,7 +165,7 @@ module.exports = [
       .setDescription('Post the ticket panel in this channel.')
       .addRoleOption((option) => option
         .setName('staff_role')
-        .setDescription('Optional role that can view and manage tickets'))),
+        .setDescription('Optional role that can view tickets; /setadmin or /setowner roles manage them'))),
   new SlashCommandBuilder()
     .setName('ticketsetup')
     .setDescription('Post the ticket panel in this channel.')

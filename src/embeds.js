@@ -87,6 +87,8 @@ function helpEmbed(commands) {
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
+  lines.push('**,ticket setup staff_role <role id>** — Set the ticket staff role and post the panel (administrator only).');
+  lines.push('**,ticket setup ownersv_role <role id>** — Set the ticket owner role (server owner only).');
   lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
   lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
   lines.push('**,help** — Show this command list.');

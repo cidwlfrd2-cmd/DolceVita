@@ -24,6 +24,7 @@ const {
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
+const { ticketAccessRoleIds, ticketManagerRoleIds } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const commands = require('./commands');
 
@@ -173,7 +174,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
   const guild = interaction.guild;
   if (!guild) throw new Error('Tickets can only be created in a server.');
   const settings = store.getSettings(interaction.guildId);
-  const ticketRoleIds = [settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean);
+  const ticketRoleIds = ticketAccessRoleIds(settings);
   for (const roleId of ticketRoleIds) {
     if (!guild.roles.cache.has(roleId)) {
       throw new Error(`Configured ticket role ${roleId} no longer exists.`);
@@ -280,7 +281,9 @@ async function handleCommand(interaction) {
       return interaction.reply({ content: 'Run `/ticket setup` in a server text channel.', ephemeral: true });
     }
     const staffRole = interaction.options.getRole('staff_role');
-    if (staffRole) store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
+    if (staffRole) {
+      store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
+    }
     await postTicketPanel(channel);
     return interaction.reply({ content: `Ticket panel posted in ${channel}.`, ephemeral: true });
   }
@@ -552,9 +555,10 @@ async function handleTicketButton(interaction) {
       return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
-    const ticketRoleIds = [...new Set([settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean))];
-    if (!ticketRoleIds.some((roleId) => memberHasRole(interaction, roleId))) {
-      return interaction.reply({ content: 'Only members with the configured ticket staff or owner role can claim tickets.', ephemeral: true });
+    const ticketRoleIds = ticketAccessRoleIds(settings);
+    const managerRoleIds = ticketManagerRoleIds(settings);
+    if (!managerRoleIds.some((roleId) => memberHasRole(interaction, roleId))) {
+      return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can claim tickets.', ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
@@ -596,11 +600,11 @@ async function handleTicketButton(interaction) {
       return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
-    const ticketRoleIds = [settings?.ticketStaffRoleId, settings?.ownerRoleId].filter(Boolean);
+    const managerRoleIds = ticketManagerRoleIds(settings);
     const canClose = interaction.user.id !== ownerMatch[1]
-      && ticketRoleIds.some((roleId) => memberHasRole(interaction, roleId));
+      && managerRoleIds.some((roleId) => memberHasRole(interaction, roleId));
     if (!canClose) {
-      return interaction.reply({ content: 'Only the configured ticket staff or owner role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
+      return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can close tickets, and ticket creators cannot close their own tickets.', ephemeral: true });
     }
     if (!settings?.ticketTranscriptChannelId) {
       return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
@@ -735,6 +739,47 @@ client.on('messageCreate', async (message) => {
         await message.reply('Only server administrators can post the ticket panel.');
       } else {
         await postTicketPanel(message.channel);
+      }
+      return;
+    }
+    if (messageCommand?.name === 'ticket_setup_staff_role' || messageCommand?.name === 'ticket_setup_ownersv_role') {
+      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await message.reply('Only server administrators can configure ticket roles.');
+        return;
+      }
+      if (messageCommand.args.length !== 1 || !/^\d{17,20}$/.test(messageCommand.args[0])) {
+        await message.reply(`Usage: \`,ticket setup ${messageCommand.name.endsWith('staff_role') ? 'staff_role' : 'ownersv_role'} <role id>\``);
+        return;
+      }
+      if (messageCommand.name === 'ticket_setup_ownersv_role' && message.guild.ownerId !== message.author.id) {
+        await message.reply('Only the server owner can set the ticket owner role.');
+        return;
+      }
+
+      let role;
+      try {
+        role = await message.guild.roles.fetch(messageCommand.args[0]);
+      } catch (error) {
+        if (error.code === 10011) {
+          await message.reply('That role ID does not belong to a role in this server.');
+          return;
+        }
+        console.error(`Could not validate ticket role ${messageCommand.args[0]}:`, error);
+        await message.reply('Could not validate that role right now. Please try again.');
+        return;
+      }
+      if (!role) {
+        await message.reply('That role ID does not belong to a role in this server.');
+        return;
+      }
+
+      if (messageCommand.name === 'ticket_setup_staff_role') {
+        store.setSettings(message.guild.id, { ticketStaffRoleId: role.id });
+        await postTicketPanel(message.channel);
+        await message.reply(`Ticket staff role set to ${role}. The ticket panel was posted in this channel.`);
+      } else {
+        store.setSettings(message.guild.id, { ownerRoleId: role.id });
+        await message.reply(`Ticket owner role set to ${role}. Members with this role can claim and close tickets.`);
       }
       return;
     }

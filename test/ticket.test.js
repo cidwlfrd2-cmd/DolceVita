@@ -14,6 +14,7 @@ const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
+const { ticketAccessRoleIds, ticketManagerRoleIds } = require('../src/ticket-permissions');
 
 test('ticket panel contains only the three requested buttons', () => {
   assert.deepEqual(
@@ -118,6 +119,28 @@ test('ticket action buttons include claim and close, disabling claim after assig
   assert.notEqual(claimedButtons[1].disabled, true);
 });
 
+test('ticket access includes configured ticket, admin, and owner roles', () => {
+  assert.deepEqual(ticketAccessRoleIds({
+    ticketStaffRoleId: 'ticket-staff',
+    adminRoleId: 'admin',
+    ownerRoleId: 'owner',
+  }), ['ticket-staff', 'admin', 'owner']);
+  assert.deepEqual(ticketAccessRoleIds({
+    ticketStaffRoleId: 'same-role',
+    adminRoleId: 'same-role',
+    ownerRoleId: 'owner',
+  }), ['same-role', 'owner']);
+});
+
+test('only configured /setadmin and /setowner roles can claim or close tickets', () => {
+  assert.deepEqual(ticketManagerRoleIds({
+    ticketStaffRoleId: 'ticket-staff',
+    adminRoleId: 'admin',
+    ownerRoleId: 'owner',
+  }), ['admin', 'owner']);
+  assert.deepEqual(ticketManagerRoleIds({ ticketStaffRoleId: 'ticket-staff' }), []);
+});
+
 test('ticket channel names include type, submitted form answer, and username', () => {
   assert.equal(ticketChannelName('order', 'Alex Smith', 'Latte'), 'order-latte-alex-smith');
   assert.equal(ticketChannelName('report', 'Alex Smith', 'Wrong item!'), 'report-wrong-item-alex-smith');
@@ -162,6 +185,18 @@ test('ticket message command parser recognizes category and transcript setup ali
   assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
 });
 
+test('ticket setup message commands parse staff and owner role IDs', () => {
+  assert.deepEqual(parseTicketMessageCommand(',ticket setup staff_role 123456789012345678'), {
+    name: 'ticket_setup_staff_role',
+    args: ['123456789012345678'],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',ticket setup ownersv_role 123456789012345678'), {
+    name: 'ticket_setup_ownersv_role',
+    args: ['123456789012345678'],
+  });
+  assert.equal(parseTicketMessageCommand(',ticket setup unknown_role 123456789012345678'), null);
+});
+
 test('help command lists registered commands, subcommands, and message shortcuts', () => {
   const embed = helpEmbed(commands).toJSON();
   assert.equal(commands.find((command) => command.name === 'help')?.description, 'List all bot commands.');
@@ -179,6 +214,8 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/setupticketcategory',
     ',setupticketcategory',
     ',set ticket_transcript',
+    ',ticket setup staff_role <role id>',
+    ',ticket setup ownersv_role <role id>',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
