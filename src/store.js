@@ -77,7 +77,7 @@ class OrderStore {
     return stickyMessage;
   }
 
-  addOrder({ guildId, customerId, sourceChannelId, items, paymentMethod, supporterId, quantity, details }) {
+  addOrder({ guildId, customerId, sourceChannelId, items, paymentMethod, supporterId, quantity }) {
     const state = this.read();
     const order = {
       id: randomUUID().toUpperCase(),
@@ -88,7 +88,6 @@ class OrderStore {
       paymentMethod,
       supporterId,
       quantity,
-      details,
       status: 'pending',
       processingStatus: 'not_yet',
       createdAt: new Date().toISOString(),

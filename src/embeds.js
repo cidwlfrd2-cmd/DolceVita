@@ -4,17 +4,20 @@ const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, canc
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
 
 function orderEmbed(order) {
+  const status = order.status === 'completed'
+    ? 'Completed'
+    : order.status === 'cancelled'
+      ? 'Cancelled'
+      : order.processingStatus === 'processing' ? 'Processing' : 'Not yet';
   const embed = new EmbedBuilder()
     .setColor(COLORS[order.status])
-    .setTitle(`Order #${order.id}`)
     .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer:** <@${order.customerId}>\n**Supporter:** ${order.supporterId ? `<@${order.supporterId}>` : 'Not assigned'}\n**Order submitted in:** ${order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel'}`)
     .addFields({
       name: 'Status',
-      value: order.processingStatus === 'processing' ? 'Processing' : 'Not yet',
+      value: status,
       inline: true,
     });
 
-  if (order.details) embed.addFields({ name: 'Details', value: order.details });
   if (order.claimedBy) embed.addFields({ name: 'Claimed by', value: `<@${order.claimedBy}>`, inline: true });
   if (order.processingBy) embed.addFields({ name: 'Processing by', value: `<@${order.processingBy}>`, inline: true });
   embed.setTimestamp(new Date(order.createdAt));

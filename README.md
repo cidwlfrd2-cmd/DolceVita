@@ -12,7 +12,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 
 ## Commands
 
-- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional> details:<optional>` is staff-only and posts the selected supporter in the order embed. New orders show **Not yet** until the configured owner role presses **Processing**.
+- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only and posts the selected supporter in the order embed. New orders show **Not yet** until the configured owner role presses **Processing**.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.

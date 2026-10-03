@@ -161,7 +161,6 @@ async function handleCommand(interaction) {
       paymentMethod: interaction.options.getString('payment_method', true),
       supporterId: interaction.options.getUser('supporter', true).id,
       quantity: interaction.options.getInteger('quantity') ?? 1,
-      details: interaction.options.getString('details'),
     });
     const channel = await client.channels.fetch(orderChannelId);
     const message = await channel.send({

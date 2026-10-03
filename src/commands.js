@@ -70,11 +70,7 @@ module.exports = [
       .setName('quantity')
       .setDescription('How many?')
       .setMinValue(1)
-      .setMaxValue(999))
-    .addStringOption((option) => option
-      .setName('details')
-      .setDescription('Options or notes for staff')
-      .setMaxLength(1000)),
+      .setMaxValue(999)),
   new SlashCommandBuilder()
     .setName('queue')
     .setDescription('Display the public order queue.'),

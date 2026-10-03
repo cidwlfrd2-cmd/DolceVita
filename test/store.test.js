@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { OrderStore } = require('../src/store');
+const { orderEmbed } = require('../src/embeds');
 
 function createStore() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dolce-vita-'));
@@ -13,8 +14,8 @@ function createStore() {
 test('orders persist, can be claimed in order, and leave the active queue when finished', () => {
   const store = createStore();
   store.setSettings('guild-1', { channelId: 'channel-1', staffRoleId: null });
-  const first = store.addOrder({ guildId: 'guild-1', customerId: 'user-1', sourceChannelId: 'source-1', items: 'Latte', paymentMethod: 'Card', supporterId: 'staff-1', quantity: 2, details: '' });
-  const second = store.addOrder({ guildId: 'guild-1', customerId: 'user-2', sourceChannelId: 'source-2', items: 'Tea', paymentMethod: 'Cash', supporterId: 'staff-2', quantity: 1, details: null });
+  const first = store.addOrder({ guildId: 'guild-1', customerId: 'user-1', sourceChannelId: 'source-1', items: 'Latte', paymentMethod: 'Card', supporterId: 'staff-1', quantity: 2 });
+  const second = store.addOrder({ guildId: 'guild-1', customerId: 'user-2', sourceChannelId: 'source-2', items: 'Tea', paymentMethod: 'Cash', supporterId: 'staff-2', quantity: 1 });
 
   const restartedStore = new OrderStore(store.filePath);
   assert.equal(restartedStore.getSettings('guild-1').channelId, 'channel-1');
@@ -51,6 +52,26 @@ test('orders persist, can be claimed in order, and leave the active queue when f
 test('claim returns null when there are no pending orders', () => {
   const store = createStore();
   assert.equal(store.claimNext('guild-1', 'staff-1'), null);
+});
+
+test('completed and cancelled statuses override processing in the order embed', () => {
+  const order = {
+    id: 'ORDER-1',
+    status: 'completed',
+    processingStatus: 'processing',
+    items: 'Coffee',
+    quantity: 1,
+    customerId: 'customer-1',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    sourceChannelId: 'source-1',
+    createdAt: new Date().toISOString(),
+  };
+
+  const completedEmbed = orderEmbed(order).toJSON();
+  assert.equal(completedEmbed.fields.find((field) => field.name === 'Status').value, 'Completed');
+  const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
+  assert.equal(cancelledEmbed.fields.find((field) => field.name === 'Status').value, 'Cancelled');
 });
 
 test('vouches persist and are counted only for the requested user and server', () => {
