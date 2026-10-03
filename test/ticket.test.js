@@ -185,16 +185,33 @@ test('ticket message command parser recognizes category and transcript setup ali
   assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
 });
 
-test('ticket setup message commands parse staff and owner role IDs', () => {
-  assert.deepEqual(parseTicketMessageCommand(',ticket setup staff_role 123456789012345678'), {
-    name: 'ticket_setup_staff_role',
-    args: ['123456789012345678'],
+test('bot pronouns message command supports show, add, remove, and change actions', () => {
+  assert.deepEqual(parseTicketMessageCommand(',botpronouns'), {
+    name: 'botpronouns',
+    action: 'show',
+    args: [],
   });
-  assert.deepEqual(parseTicketMessageCommand(',ticket setup ownersv_role 123456789012345678'), {
-    name: 'ticket_setup_ownersv_role',
-    args: ['123456789012345678'],
+  assert.deepEqual(parseTicketMessageCommand(',botpronouns add she/her'), {
+    name: 'botpronouns',
+    action: 'add',
+    args: ['she/her'],
   });
-  assert.equal(parseTicketMessageCommand(',ticket setup unknown_role 123456789012345678'), null);
+  assert.deepEqual(parseTicketMessageCommand(',botpronouns change they/them'), {
+    name: 'botpronouns',
+    action: 'change',
+    args: ['they/them'],
+  });
+  assert.deepEqual(parseTicketMessageCommand(',botpronouns remove'), {
+    name: 'botpronouns',
+    action: 'remove',
+    args: [],
+  });
+  assert.equal(parseTicketMessageCommand(',botpronouns invalid she/her'), null);
+});
+
+test('removed ticket role setup message commands are not recognized', () => {
+  assert.equal(parseTicketMessageCommand(',ticket setup staff_role 123456789012345678'), null);
+  assert.equal(parseTicketMessageCommand(',ticket setup ownersv_role 123456789012345678'), null);
 });
 
 test('help command lists registered commands, subcommands, and message shortcuts', () => {
@@ -214,11 +231,13 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/setupticketcategory',
     ',setupticketcategory',
     ',set ticket_transcript',
-    ',ticket setup staff_role <role id>',
-    ',ticket setup ownersv_role <role id>',
+    ',botpronouns add',
+    ',botpronouns change',
+    ',botpronouns remove',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
+  assert.match(embed.description, /automatically delete the ticket channel/);
   assert.ok(embed.description.length <= 4096);
 });
 

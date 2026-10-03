@@ -633,10 +633,8 @@ async function handleTicketButton(interaction) {
       }],
       allowedMentions: { parse: [] },
     });
-    await channel.permissionOverwrites.edit(ownerMatch[1], { SendMessages: false });
-    if (!channel.name.startsWith('closed-')) await channel.setName(`closed-${channel.name}`.slice(0, 100));
-    await interaction.message.edit({ content: `Ticket closed by <@${interaction.user.id}>.`, components: [], allowedMentions: { parse: [] } });
-    return interaction.editReply(`Ticket closed. Transcript posted in ${transcriptChannel}.`);
+    await channel.delete(`Ticket closed by ${interaction.user.tag}; transcript posted in ${transcriptChannel.id}`);
+    return interaction.editReply(`Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`);
   }
 }
 
@@ -742,45 +740,53 @@ client.on('messageCreate', async (message) => {
       }
       return;
     }
-    if (messageCommand?.name === 'ticket_setup_staff_role' || messageCommand?.name === 'ticket_setup_ownersv_role') {
+    if (messageCommand?.name === 'botpronouns') {
+      const currentPronouns = store.getSettings(message.guild.id)?.botPronouns ?? null;
+      if (messageCommand.action === 'show') {
+        await message.reply({
+          content: currentPronouns
+            ? `My pronouns for this server are: ${currentPronouns}`
+            : 'No bot pronouns have been set for this server.',
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can configure ticket roles.');
+        await message.reply('Only server administrators can change the bot pronouns.');
         return;
       }
-      if (messageCommand.args.length !== 1 || !/^\d{17,20}$/.test(messageCommand.args[0])) {
-        await message.reply(`Usage: \`,ticket setup ${messageCommand.name.endsWith('staff_role') ? 'staff_role' : 'ownersv_role'} <role id>\``);
-        return;
-      }
-      if (messageCommand.name === 'ticket_setup_ownersv_role' && message.guild.ownerId !== message.author.id) {
-        await message.reply('Only the server owner can set the ticket owner role.');
-        return;
-      }
-
-      let role;
-      try {
-        role = await message.guild.roles.fetch(messageCommand.args[0]);
-      } catch (error) {
-        if (error.code === 10011) {
-          await message.reply('That role ID does not belong to a role in this server.');
+      if (messageCommand.action === 'remove') {
+        if (messageCommand.args.length) {
+          await message.reply('Usage: `,botpronouns remove`');
           return;
         }
-        console.error(`Could not validate ticket role ${messageCommand.args[0]}:`, error);
-        await message.reply('Could not validate that role right now. Please try again.');
-        return;
-      }
-      if (!role) {
-        await message.reply('That role ID does not belong to a role in this server.');
+        if (!currentPronouns) {
+          await message.reply('No bot pronouns are currently set for this server.');
+          return;
+        }
+        store.setSettings(message.guild.id, { botPronouns: null });
+        await message.reply('Bot pronouns have been removed for this server.');
         return;
       }
 
-      if (messageCommand.name === 'ticket_setup_staff_role') {
-        store.setSettings(message.guild.id, { ticketStaffRoleId: role.id });
-        await postTicketPanel(message.channel);
-        await message.reply(`Ticket staff role set to ${role}. The ticket panel was posted in this channel.`);
-      } else {
-        store.setSettings(message.guild.id, { ownerRoleId: role.id });
-        await message.reply(`Ticket owner role set to ${role}. Members with this role can claim and close tickets.`);
+      const pronouns = messageCommand.args.join(' ').trim();
+      if (!pronouns || pronouns.length > 100) {
+        await message.reply(`Usage: \`,botpronouns ${messageCommand.action} <pronouns>\` (1–100 characters)`);
+        return;
       }
+      if (messageCommand.action === 'add' && currentPronouns) {
+        await message.reply('Bot pronouns are already set. Use `,botpronouns change <pronouns>` to replace them.');
+        return;
+      }
+      if (messageCommand.action === 'change' && !currentPronouns) {
+        await message.reply('No bot pronouns are set. Use `,botpronouns add <pronouns>` first.');
+        return;
+      }
+      store.setSettings(message.guild.id, { botPronouns: pronouns });
+      await message.reply({
+        content: `Bot pronouns ${messageCommand.action === 'add' ? 'added' : 'changed'} to: ${pronouns}`,
+        allowedMentions: { parse: [] },
+      });
       return;
     }
     if (messageCommand?.name === 'setupticketcategory' || messageCommand?.name === 'set_ticket_transcript') {

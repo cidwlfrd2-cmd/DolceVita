@@ -7,13 +7,11 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',ticketsetup') {
     return args.length === 0 ? { name: 'ticketsetup', args } : null;
   }
-  if (normalizedCommand === ',ticket' && args[0]?.toLowerCase() === 'setup') {
-    const [roleType, roleId, ...extraArgs] = args.slice(1);
-    if (extraArgs.length || !['staff_role', 'ownersv_role'].includes(roleType?.toLowerCase())) return null;
-    return {
-      name: `ticket_setup_${roleType.toLowerCase()}`,
-      args: roleId ? [roleId] : [],
-    };
+  if (normalizedCommand === ',botpronouns') {
+    const action = args[0]?.toLowerCase();
+    if (!action) return { name: 'botpronouns', action: 'show', args: [] };
+    if (!['add', 'remove', 'change'].includes(action)) return null;
+    return { name: 'botpronouns', action, args: args.slice(1) };
   }
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };
