@@ -4,6 +4,8 @@ const {
   ButtonStyle,
   ContainerBuilder,
   EmbedBuilder,
+  FileUploadBuilder,
+  LabelBuilder,
   ModalBuilder,
   TextDisplayBuilder,
   TextInputBuilder,
@@ -33,8 +35,7 @@ function orderContainer(order) {
       `  _ _     ༄   ${order.items ?? order.item}`,
       `   _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
       `    _ _     ༄   status: __**${status}**__`,
-      `    -# _ _       🍬    served by : ${servedBy}`,
-      `-# Submitted <t:${Math.floor(new Date(order.createdAt).getTime() / 1000)}:f>`,
+      `    -# _ _       🍬   served by ${servedBy}`,
       '_ _',
     ].join('\n')))
     .addActionRowComponents(orderButtons(order));
@@ -113,17 +114,68 @@ function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
     );
 }
 
-function orderCompletionReminderEmbed() {
-  return new EmbedBuilder()
-    .setColor(0x35a16b)
-    .setDescription([
+function orderCompletionReminderContainer(orderId) {
+  return new ContainerBuilder()
+    .setAccentColor(0x35a16b)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**REMINDERS : WARRANTY POLICY!!**',
       '› All completed orders come with a 12-hours warranty.',
       '› Replacements will only be provided for verified issues covered by warranty.',
       '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
       '› vouch within 12 hrs αfter clαiming order.',
       '› NO VOUCH = no refund, no replacement & no warranty.',
-    ].join('\n'));
+    ].join('\n')))
+    .addActionRowComponents(orderVouchButton(orderId));
+}
+
+function orderVouchButton(orderId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`order:vouch:${orderId}`)
+      .setLabel('Vouch')
+      .setStyle(ButtonStyle.Success),
+  );
+}
+
+function orderVouchModal(orderId) {
+  return new ModalBuilder()
+    .setCustomId(`order-vouch-form:${orderId}`)
+    .setTitle('VOUCH FORM')
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel('Product')
+        .setDescription('DEKOR / GAMECREDITS / ROBUX')
+        .setTextInputComponent(new TextInputBuilder()
+          .setCustomId('order-vouch-product')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(20)
+          .setPlaceholder('DEKOR / GAMECREDITS / ROBUX')),
+      new LabelBuilder()
+        .setLabel('Quantity')
+        .setDescription('1-1000')
+        .setTextInputComponent(new TextInputBuilder()
+          .setCustomId('order-vouch-quantity')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(4)
+          .setPlaceholder('1-1000')),
+      new LabelBuilder()
+        .setLabel('Feedback')
+        .setTextInputComponent(new TextInputBuilder()
+          .setCustomId('order-vouch-feedback')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1024)),
+      new LabelBuilder()
+        .setLabel('Proof')
+        .setDescription('Upload 1-2 proof images.')
+        .setFileUploadComponent(new FileUploadBuilder()
+          .setCustomId('order-vouch-proof')
+          .setMinValues(1)
+          .setMaxValues(2)
+          .setRequired(true)),
+    );
 }
 
 function paymentDetailsEmbed() {
@@ -455,7 +507,9 @@ module.exports = {
   orderContainer,
   orderStatusEmbed,
   voidedOrderEmbed,
-  orderCompletionReminderEmbed,
+  orderCompletionReminderContainer,
+  orderVouchButton,
+  orderVouchModal,
   multiplicationEmbed,
   paymentReminderEmbed,
   vouchEmbed,

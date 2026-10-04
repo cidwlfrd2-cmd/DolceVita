@@ -15,7 +15,8 @@ const {
   orderButtons,
   orderContainer,
   orderStatusEmbed,
-  orderCompletionReminderEmbed,
+  orderCompletionReminderContainer,
+  orderVouchModal,
   multiplicationEmbed,
   vouchEmbed,
   vouchPreviewButtons,
@@ -57,6 +58,7 @@ const {
 } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { parseOrderTicketForm } = require('./order-ticket-form');
+const { parseOrderVouchForm } = require('./order-vouch-form');
 const { parseOthersTicketForm } = require('./others-ticket-form');
 const { multiplyAmounts, multiplyExpression } = require('./multiplication');
 const { replyThenDeleteCommand } = require('./message-command-actions');
@@ -86,14 +88,123 @@ function discardVouchPreview(previewId) {
   pendingVouchPreviews.delete(previewId);
 }
 
+async function presentVouchPreview(interaction, {
+  guildId,
+  items,
+  feedback,
+  proofs,
+  directMessage = false,
+  ticketOwnerDmId = null,
+}) {
+  const settings = store.getSettings(guildId);
+  if (!settings?.vouchChannelId) {
+    return interaction.editReply('The vouch channel has not been set. Ask an administrator to run `/set vouch channel:#channel`.');
+  }
+  const channel = await client.channels.fetch(settings.vouchChannelId);
+  if (!channel
+    || channel.guildId !== guildId
+    || !channel.isTextBased()
+    || typeof channel.send !== 'function') {
+    throw new Error(`Vouch channel ${settings.vouchChannelId} is unavailable or not a sendable server text channel.`);
+  }
+  let proofCollage;
+  try {
+    const imageBuffers = [];
+    for (const proof of proofs) {
+      const response = await fetch(proof.url, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error(`Proof download returned HTTP ${response.status}.`);
+      imageBuffers.push(Buffer.from(await response.arrayBuffer()));
+    }
+    proofCollage = await createProofCollage(imageBuffers);
+  } catch (error) {
+    console.error('Could not create vouch proof collage:', error);
+    return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
+  }
+  const vouchedAt = new Date();
+  const embed = vouchEmbed(interaction.user, items, feedback, vouchedAt);
+  embed.setImage('attachment://vouch-proofs.png');
+  const previewId = randomUUID();
+  const timeoutId = setTimeout(() => discardVouchPreview(previewId), VOUCH_PREVIEW_DURATION_MS);
+  timeoutId.unref();
+  pendingVouchPreviews.set(previewId, {
+    guildId,
+    userId: interaction.user.id,
+    channelId: channel.id,
+    items,
+    vouchedAt,
+    ticketOwnerDmId,
+    directMessage,
+    embed,
+    proofCollage,
+    timeoutId,
+  });
+  return interaction.editReply({
+    content: 'Preview your vouch below. Confirm to post it, or choose “No, I’ll change it” and submit the form again.',
+    embeds: [embed],
+    components: [vouchPreviewButtons(previewId)],
+    files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }],
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function handleOrderVouchButton(interaction) {
+  if (interaction.inGuild()) {
+    return interaction.reply({ content: 'Use this Vouch button from the warranty reminder in your DMs.', ephemeral: true });
+  }
+  const orderId = interaction.customId.slice('order:vouch:'.length);
+  const order = store.getOrder(orderId);
+  if (!order || order.status !== 'completed' || order.customerId !== interaction.user.id) {
+    return interaction.reply({ content: 'This completed-order vouch form is no longer available.', ephemeral: true });
+  }
+  return interaction.showModal(orderVouchModal(order.id));
+}
+
+async function handleOrderVouchModal(interaction) {
+  if (interaction.inGuild()) {
+    return interaction.reply({ content: 'Submit this vouch form from the warranty reminder in your DMs.', ephemeral: true });
+  }
+  const orderId = interaction.customId.slice('order-vouch-form:'.length);
+  const order = store.getOrder(orderId);
+  if (!order || order.status !== 'completed' || order.customerId !== interaction.user.id) {
+    return interaction.reply({ content: 'This completed-order vouch form is no longer available.', ephemeral: true });
+  }
+  const form = parseOrderVouchForm({
+    product: interaction.fields.getTextInputValue('order-vouch-product'),
+    quantity: interaction.fields.getTextInputValue('order-vouch-quantity'),
+    feedback: interaction.fields.getTextInputValue('order-vouch-feedback'),
+  });
+  if (form.error) {
+    return interaction.reply({ content: form.error, ephemeral: true });
+  }
+  const uploadedFiles = interaction.fields.getUploadedFiles('order-vouch-proof');
+  const proofs = uploadedFiles ? [...uploadedFiles.values()] : [];
+  const invalidProof = proofs.find((attachment) => (
+    !attachment.contentType?.startsWith('image/')
+    && !/\.(avif|bmp|gif|jpe?g|png|webp)$/i.test(attachment.name ?? '')
+  ));
+  if (proofs.length < 1 || proofs.length > 2 || invalidProof) {
+    return interaction.reply({ content: 'Upload one or two proof images.', ephemeral: true });
+  }
+  await interaction.deferReply({ ephemeral: true });
+  return presentVouchPreview(interaction, {
+    guildId: order.guildId,
+    items: `${form.value.product} x ${form.value.quantity}`,
+    feedback: form.value.feedback,
+    proofs,
+    directMessage: true,
+  });
+}
+
 async function handleVouchPreviewButton(interaction) {
   const [, action, previewId] = interaction.customId.split(':');
   const preview = pendingVouchPreviews.get(previewId);
   if (!preview
-    || preview.guildId !== interaction.guildId
+    || (preview.directMessage
+      ? interaction.inGuild()
+      : preview.guildId !== interaction.guildId)
     || preview.userId !== interaction.user.id) {
     return interaction.reply({
-      content: 'This vouch preview is no longer available. Please run `/vouch` again.',
+      content: 'This vouch preview is no longer available. Please start the vouch again.',
       ephemeral: true,
     });
   }
@@ -103,7 +214,9 @@ async function handleVouchPreviewButton(interaction) {
   if (action === 'change') {
     discardVouchPreview(previewId);
     return interaction.update({
-      content: 'Vouch cancelled. Run `/vouch` again with your changes.',
+      content: preview.directMessage
+        ? 'Vouch cancelled. Click the Vouch button again to submit a new form.'
+        : 'Vouch cancelled. Run `/vouch` again with your changes.',
       embeds: [],
       components: [],
       attachments: [],
@@ -118,7 +231,7 @@ async function handleVouchPreviewButton(interaction) {
   try {
     const channel = await client.channels.fetch(preview.channelId);
     if (!channel
-      || channel.guildId !== interaction.guildId
+      || channel.guildId !== preview.guildId
       || !channel.isTextBased()
       || typeof channel.send !== 'function') {
       throw new Error(`Vouch channel ${preview.channelId} is unavailable or not a sendable server text channel.`);
@@ -846,51 +959,15 @@ async function handleCommand(interaction) {
     }
 
     await interaction.deferReply({ ephemeral: true });
-    const channel = await client.channels.fetch(settings.vouchChannelId);
-    if (!channel
-      || channel.guildId !== interaction.guildId
-      || !channel.isTextBased()
-      || typeof channel.send !== 'function') {
-      throw new Error(`Vouch channel ${settings.vouchChannelId} is unavailable or not a sendable server text channel.`);
-    }
-    let proofCollage = null;
-    try {
-      const imageBuffers = [];
-      for (const proof of proofs) {
-        const response = await fetch(proof.url, { signal: AbortSignal.timeout(15000) });
-        if (!response.ok) throw new Error(`Proof download returned HTTP ${response.status}.`);
-        imageBuffers.push(Buffer.from(await response.arrayBuffer()));
-      }
-      proofCollage = await createProofCollage(imageBuffers);
-    } catch (error) {
-      console.error('Could not create vouch proof collage:', error);
-      return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
-    }
-    const vouchedAt = new Date();
-    const embed = vouchEmbed(interaction.user, items, feedback, vouchedAt);
-    embed.setImage('attachment://vouch-proofs.png');
-    const previewId = randomUUID();
-    const timeoutId = setTimeout(() => discardVouchPreview(previewId), VOUCH_PREVIEW_DURATION_MS);
-    timeoutId.unref();
-    pendingVouchPreviews.set(previewId, {
+    return presentVouchPreview(interaction, {
       guildId: interaction.guildId,
-      userId: interaction.user.id,
-      channelId: channel.id,
       items,
-      vouchedAt,
+      feedback,
+      proofs,
       ticketOwnerDmId: ticketOwnerId(interaction.channel) === interaction.user.id
         ? interaction.user.id
         : null,
-      embed,
-      proofCollage,
-      timeoutId,
-    });
-    return interaction.editReply({
-      content: 'Preview your vouch below. Confirm to post it, or choose “No, I’ll change it” and run `/vouch` again.',
-      embeds: [embed],
-      components: [vouchPreviewButtons(previewId)],
-      files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }],
-      allowedMentions: { parse: [] },
+      directMessage: false,
     });
   }
 
@@ -1175,7 +1252,7 @@ async function handleButton(interaction) {
     allowedMentions: { parse: [] },
   });
   const statusEmbed = orderStatusEmbed(order);
-  const completionReminderEmbed = action === 'complete' ? orderCompletionReminderEmbed() : null;
+  const completionReminder = action === 'complete' ? orderCompletionReminderContainer(order.id) : null;
   const notificationFailures = [];
   if (action === 'complete') {
     scheduleVoidCheckForOrder(order);
@@ -1193,12 +1270,6 @@ async function handleButton(interaction) {
         embeds: [statusEmbed],
         allowedMentions: { parse: [] },
       });
-      if (completionReminderEmbed) {
-        await sourceChannel.send({
-          embeds: [completionReminderEmbed],
-          allowedMentions: { parse: [] },
-        });
-      }
     } catch (error) {
       console.error(`Could not send status update for order ${order.id} to source channel ${order.sourceChannelId}:`, error);
       notificationFailures.push(`the original order channel <#${order.sourceChannelId}>`);
@@ -1207,8 +1278,12 @@ async function handleButton(interaction) {
   try {
     const customer = await client.users.fetch(order.customerId);
     await customer.send({ embeds: [statusEmbed], allowedMentions: { parse: [] } });
-    if (completionReminderEmbed) {
-      await customer.send({ embeds: [completionReminderEmbed], allowedMentions: { parse: [] } });
+    if (completionReminder) {
+      await customer.send({
+        components: [completionReminder],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
     }
   } catch (error) {
     console.error(`Could not DM order status update for order ${order.id} to customer ${order.customerId}:`, error);
@@ -1258,10 +1333,14 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.isButton() && interaction.customId.startsWith('vouch-preview:')) await handleVouchPreviewButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket-close:')) await handleTicketCloseConfirmation(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('order:vouch:')) await handleOrderVouchButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('payment:')) await handlePaymentButton(interaction);
     else if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket-close-reason:')) {
       await handleTicketCloseReasonModal(interaction);
+    }
+    else if (interaction.isModalSubmit() && interaction.customId.startsWith('order-vouch-form:')) {
+      await handleOrderVouchModal(interaction);
     }
     else if (interaction.isModalSubmit() && [
       'ticket:order-form',

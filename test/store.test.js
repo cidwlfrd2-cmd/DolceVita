@@ -226,16 +226,20 @@ test('new order container keeps ticket owner and assigned supporter in the corre
   assert.equal(container.components[1].type, 1);
   assert.equal(container.components[1].components.length, 3);
   const content = container.components[0].content;
-  assert.match(content, /-# Submitted <t:\d+:f>/);
-  assert.equal(content.replace(/^-# Submitted <t:\d+:f>\n/m, ''), [
+  assert.equal(content, [
     '_ _',
     ' _ _    🧁   order from <#source-1>',
     '  _ _     ༄   Coffee',
     '   _ _     ༄   paid via Cash',
     '    _ _     ༄   status: __**noted**__',
-    '    -# _ _       🍬    served by : <@staff-1>',
+    '    -# _ _       🍬   served by <@staff-1>',
     '_ _',
   ].join('\n'));
+  assert.doesNotMatch(content, /Submitted|<t:\d+/);
+  assert.deepEqual(
+    container.components[1].components.map(({ label }) => label),
+    ['processing', 'complete', 'cancelled'],
+  );
 
   const missingOwnerContainer = orderContainer({
     id: 'ORDER-3',
@@ -248,7 +252,7 @@ test('new order container keeps ticket owner and assigned supporter in the corre
     createdAt: new Date().toISOString(),
   }).toJSON();
   assert.match(missingOwnerContainer.components[0].content, /order from <#source-2>/);
-  assert.match(missingOwnerContainer.components[0].content, /🍬    served by : Not assigned/);
+  assert.match(missingOwnerContainer.components[0].content, /🍬   served by Not assigned/);
 });
 
 test('order container uses the source channel and stylized status line', () => {
@@ -267,7 +271,7 @@ test('order container uses the source channel and stylized status line', () => {
 
   assert.match(container.components[0].content, /order from <#source-1>/);
   assert.match(container.components[0].content, /status: __\*\*noted\*\*__/);
-  assert.match(container.components[0].content, /🍬    served by : <@staff-1>/);
+  assert.match(container.components[0].content, /🍬   served by <@staff-1>/);
 });
 
 test('vouch embed omits warranty text and shows the date in Philippine time', () => {

@@ -18,7 +18,9 @@ const {
   vouchPreviewButtons,
   paymentDetailsEmbed,
   paymentReminderButtons,
-  orderCompletionReminderEmbed,
+  orderCompletionReminderContainer,
+  orderVouchButton,
+  orderVouchModal,
   orderTicketTermsContainer,
 } = require('../src/embeds');
 const commands = require('../src/commands');
@@ -507,11 +509,11 @@ test('vouch embed matches the order-details layout and Philippine time zone', ()
   ]);
 });
 
-test('completed order reminder embed has no title and the warranty policy description', () => {
-  const embed = orderCompletionReminderEmbed().toJSON();
+test('completed order reminder is a V2 container with a Vouch button and warranty policy', () => {
+  const container = orderCompletionReminderContainer('ORDER-1').toJSON();
 
-  assert.equal(embed.title, undefined);
-  assert.equal(embed.description, [
+  assert.equal(container.type, 17);
+  assert.equal(container.components[0].content, [
     '**REMINDERS : WARRANTY POLICY!!**',
     '› All completed orders come with a 12-hours warranty.',
     '› Replacements will only be provided for verified issues covered by warranty.',
@@ -519,6 +521,37 @@ test('completed order reminder embed has no title and the warranty policy descri
     '› vouch within 12 hrs αfter clαiming order.',
     '› NO VOUCH = no refund, no replacement & no warranty.',
   ].join('\n'));
+  assert.equal(container.components[1].type, 1);
+  assert.deepEqual(container.components[1].components.map(({ custom_id, label }) => [custom_id, label]), [
+    ['order:vouch:ORDER-1', 'Vouch'],
+  ]);
+  assert.equal(orderVouchButton('ORDER-1').toJSON().components[0].label, 'Vouch');
+});
+
+test('completed order Vouch modal requests validated product, quantity, feedback, and one or two proofs', () => {
+  const modal = orderVouchModal('ORDER-1').toJSON();
+
+  assert.equal(modal.custom_id, 'order-vouch-form:ORDER-1');
+  assert.equal(modal.title, 'VOUCH FORM');
+  assert.deepEqual(modal.components.map(({ label }) => label), [
+    'Product',
+    'Quantity',
+    'Feedback',
+    'Proof',
+  ]);
+  const product = modal.components[0].component;
+  assert.equal(product.placeholder, 'DEKOR / GAMECREDITS / ROBUX');
+  assert.equal(modal.components[0].description, 'DEKOR / GAMECREDITS / ROBUX');
+  assert.equal(modal.components[1].component.placeholder, '1-1000');
+  assert.equal(modal.components[2].component.style, 2);
+  assert.deepEqual(
+    {
+      minValues: modal.components[3].component.min_values,
+      maxValues: modal.components[3].component.max_values,
+      required: modal.components[3].component.required,
+    },
+    { minValues: 1, maxValues: 2, required: true },
+  );
 });
 
 test('voided order embed includes the required title, issue details, and footer', () => {
