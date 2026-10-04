@@ -33,7 +33,7 @@ const {
 const { voidedOrderEmbed } = require('../src/embeds');
 const { parseOrderTicketForm } = require('../src/order-ticket-form');
 const { parseOthersTicketForm } = require('../src/others-ticket-form');
-const { multiplyAmounts } = require('../src/multiplication');
+const { multiplyAmounts, multiplyExpression } = require('../src/multiplication');
 const { replyThenDeleteCommand } = require('../src/message-command-actions');
 
 test('ticket panel contains only the three requested buttons', () => {
@@ -362,19 +362,16 @@ test('/solving is registered with two required numeric amounts', () => {
   );
 });
 
-test('message solving shortcut parses the supplied values for usage validation', () => {
-  assert.deepEqual(parseTicketMessageCommand(',solving 2.5 -4'), {
-    name: 'solving',
-    args: ['2.5', '-4'],
+test('calc shortcut parses a single multiplication expression', () => {
+  assert.deepEqual(parseTicketMessageCommand(',calc 5*5'), {
+    name: 'calc',
+    args: ['5*5'],
   });
-  assert.deepEqual(parseTicketMessageCommand(',solving'), {
-    name: 'solving',
+  assert.deepEqual(parseTicketMessageCommand(',calc'), {
+    name: 'calc',
     args: [],
   });
-  assert.deepEqual(parseTicketMessageCommand(',solving 1 2 3'), {
-    name: 'solving',
-    args: ['1', '2', '3'],
-  });
+  assert.equal(parseTicketMessageCommand(',solving 5*5'), null);
 });
 
 test('multiplication handles finite numbers and rejects invalid values or overflow', () => {
@@ -391,12 +388,24 @@ test('multiplication handles finite numbers and rejects invalid values or overfl
   assert.equal(multiplyAmounts('not-a-number', '3'), null);
   assert.equal(multiplyAmounts('1e309', '2'), null);
   assert.equal(multiplyAmounts(Number.MAX_VALUE, 2), null);
+  assert.deepEqual(multiplyExpression('5*5'), {
+    amountOne: 5,
+    amountTwo: 5,
+    product: 25,
+  });
+  assert.deepEqual(multiplyExpression('-2.5 * 4'), {
+    amountOne: -2.5,
+    amountTwo: 4,
+    product: -10,
+  });
+  assert.equal(multiplyExpression('5**5'), null);
+  assert.equal(multiplyExpression('5*x'), null);
 });
 
 test('multiplication result is formatted as an embed', () => {
-  const embed = multiplicationEmbed(multiplyAmounts('2.5', '-4')).toJSON();
-  assert.equal(embed.title, 'Multiplication Result');
-  assert.equal(embed.description, '**2.5 × -4 = -10**');
+  const embed = multiplicationEmbed(multiplyExpression('5*5')).toJSON();
+  assert.equal(embed.title, undefined);
+  assert.equal(embed.description, '**5 x 5 = 25**');
 });
 
 test('payment reminder embed has the requested description, no title, and server icon thumbnail', () => {
@@ -512,7 +521,7 @@ test('payment reminder has pay and no buttons in the requested order', () => {
   ]);
 });
 
-test('solving shortcut replies with the result before deleting the command message', async () => {
+test('calc shortcut replies with the result before deleting the command message', async () => {
   const calls = [];
   const message = {
     reply: async (payload) => calls.push(['reply', payload]),
@@ -528,7 +537,7 @@ test('solving shortcut replies with the result before deleting the command messa
   ]);
 });
 
-test('solving shortcut reports command deletion errors to its caller', async () => {
+test('calc shortcut reports command deletion errors to its caller', async () => {
   const deleteError = new Error('Missing Manage Messages permission');
   const message = {
     reply: async () => {},
@@ -609,7 +618,7 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/help',
     '/setup',
     '/solving',
-    ',solving <number> <number>',
+    ',calc <number>*<number>',
     '/set vouch',
     '/set ticket_transcript',
     '/set voided',

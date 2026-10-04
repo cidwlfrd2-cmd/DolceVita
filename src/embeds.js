@@ -80,8 +80,7 @@ function voidedOrderEmbed(user, product, reason, markedAt = new Date()) {
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
-    .setTitle('Multiplication Result')
-    .setDescription(`**${amountOne} × ${amountTwo} = ${product}**`);
+    .setDescription(`**${amountOne} x ${amountTwo} = ${product}**`);
 }
 
 function paymentReminderEmbed(serverIconUrl) {
@@ -220,7 +219,7 @@ function helpEmbed(commands) {
   lines.push('', '## Message shortcuts');
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
   lines.push('**,payment** — Show the Dolce Vita payment reminders.');
-  lines.push('**,solving <number> <number>** — Multiply two numbers, then automatically delete the command message.');
+  lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
   lines.push('**,ordercategory <channel_id>** — Set the category for new order tickets (administrator only).');
   lines.push('**,reportcategory <channel_id>** — Set the category for new report tickets (administrator only).');
   lines.push('**,othercategory <channel_id>** — Set the category for new other tickets (administrator only).');

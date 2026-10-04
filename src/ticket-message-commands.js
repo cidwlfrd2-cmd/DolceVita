@@ -10,8 +10,8 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',payment') {
     return args.length === 0 ? { name: 'payment', args } : null;
   }
-  if (normalizedCommand === ',solving') {
-    return { name: 'solving', args };
+  if (normalizedCommand === ',calc') {
+    return { name: 'calc', args };
   }
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };

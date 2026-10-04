@@ -49,7 +49,7 @@ const {
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { parseOrderTicketForm } = require('./order-ticket-form');
 const { parseOthersTicketForm } = require('./others-ticket-form');
-const { multiplyAmounts } = require('./multiplication');
+const { multiplyAmounts, multiplyExpression } = require('./multiplication');
 const { replyThenDeleteCommand } = require('./message-command-actions');
 const commands = require('./commands');
 
@@ -1218,12 +1218,12 @@ client.on('messageCreate', async (message) => {
       });
       return;
     }
-    if (messageCommand?.name === 'solving') {
-      const result = messageCommand.args.length === 2
-        ? multiplyAmounts(messageCommand.args[0], messageCommand.args[1])
+    if (messageCommand?.name === 'calc') {
+      const result = messageCommand.args.length
+        ? multiplyExpression(messageCommand.args.join(' '))
         : null;
       if (!result) {
-        await message.reply('Usage: `,solving <number> <number>` — enter two finite numbers to multiply.');
+        await message.reply('Usage: `,calc <number>*<number>` — enter two finite numbers separated by `*`.');
         return;
       }
       const deleteError = await replyThenDeleteCommand(
@@ -1234,7 +1234,7 @@ client.on('messageCreate', async (message) => {
         },
       );
       if (deleteError) {
-        console.error(`Could not delete solving command message ${message.id}:`, deleteError);
+        console.error(`Could not delete calc command message ${message.id}:`, deleteError);
         await message.channel.send('I solved the calculation, but could not delete your command. Please check that I have the Manage Messages permission.');
       }
       return;

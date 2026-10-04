@@ -17,4 +17,11 @@ function multiplyAmounts(first, second) {
   return { amountOne, amountTwo, product };
 }
 
-module.exports = { multiplyAmounts };
+function multiplyExpression(expression) {
+  if (typeof expression !== 'string') return null;
+  const amounts = expression.split('*');
+  if (amounts.length !== 2) return null;
+  return multiplyAmounts(amounts[0].trim(), amounts[1].trim());
+}
+
+module.exports = { multiplyAmounts, multiplyExpression };
