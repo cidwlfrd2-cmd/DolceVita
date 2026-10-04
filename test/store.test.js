@@ -147,11 +147,11 @@ test('ticket product is displayed as the order reference while buttons retain th
 
   assert.equal(orderReference(store.getOrder(order.id)), 'GAMECREDITS');
   assert.deepEqual(
-    orderButtons(order).toJSON().components.map((button) => button.custom_id),
+    orderButtons(order).toJSON().components.map((button) => [button.custom_id, button.label]),
     [
-      `order:processing:${order.id}`,
-      `order:complete:${order.id}`,
-      `order:cancel:${order.id}`,
+      [`order:processing:${order.id}`, 'processing'],
+      [`order:complete:${order.id}`, 'done'],
+      [`order:cancel:${order.id}`, 'cancelled'],
     ],
   );
   assert.match(queueEmbed([order]).toJSON().fields[0].name, /#GAMECREDITS/);
@@ -172,9 +172,9 @@ test('completed and cancelled statuses override processing in the order embed', 
   };
 
   const completedEmbed = orderEmbed(order).toJSON();
-  assert.equal(completedEmbed.fields.find((field) => field.name === 'Status').value, 'Completed');
+  assert.match(completedEmbed.description, /status: \*\*done\*\*/);
   const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
-  assert.equal(cancelledEmbed.fields.find((field) => field.name === 'Status').value, 'Cancelled');
+  assert.match(cancelledEmbed.description, /status: \*\*cancelled\*\*/);
 });
 
 test('source-channel status labels reflect processing, complete, and cancelled transitions', () => {
@@ -222,9 +222,14 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
     createdAt: new Date().toISOString(),
   }).toJSON();
 
-  assert.equal(embed.fields.find((field) => field.name === 'Status').value, 'Noted');
-  assert.match(embed.description, /\*\*Customer By:\*\* <@customer-1>/);
-  assert.match(embed.description, /\*\*Served by:\*\* <@staff-1>/);
+  assert.equal(embed.fields, undefined);
+  assert.equal(embed.description, [
+    'order from 🔒 <@customer-1>',
+    '• (1) Coffee',
+    '• paid via Cash',
+    '• status: **noted**',
+    'served by <@staff-1> 💙',
+  ].join('\n'));
 
   const missingOwnerEmbed = orderEmbed({
     id: 'ORDER-3',
@@ -236,8 +241,8 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
     sourceChannelId: 'source-2',
     createdAt: new Date().toISOString(),
   }).toJSON();
-  assert.match(missingOwnerEmbed.description, /\*\*Customer By:\*\* Unknown customer/);
-  assert.match(missingOwnerEmbed.description, /\*\*Served by:\*\* Not assigned/);
+  assert.match(missingOwnerEmbed.description, /order from 🔒 Unknown customer/);
+  assert.match(missingOwnerEmbed.description, /served by Not assigned/);
 });
 
 test('vouches persist and are counted only for the requested user and server', () => {

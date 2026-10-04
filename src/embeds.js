@@ -15,25 +15,24 @@ const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Complet
 
 function orderEmbed(order) {
   const status = order.status === 'completed'
-    ? 'Completed'
+    ? 'done'
     : order.status === 'cancelled'
-      ? 'Cancelled'
+      ? 'cancelled'
         : order.status === 'expired'
-          ? 'Expired'
-          : order.processingStatus === 'processing' ? 'Processing' : 'Noted';
+          ? 'expired'
+          : order.processingStatus === 'processing' ? 'processing' : 'noted';
   const customerBy = order.customerId ? `<@${order.customerId}>` : 'Unknown customer';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
   const embed = new EmbedBuilder()
     .setColor(COLORS[order.status])
-    .setDescription(`**Items:** ${order.items ?? order.item}\n**Quantity:** ${order.quantity}\n**Payment method:** ${order.paymentMethod ?? 'Not specified'}\n**Customer By:** ${customerBy}\n**Served by:** ${servedBy}\n**Order submitted in:** ${order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel'}`)
-    .addFields({
-      name: 'Status',
-      value: status,
-      inline: true,
-    });
+    .setDescription([
+      `order from 🔒 ${customerBy}`,
+      `• (${order.quantity}) ${order.items ?? order.item}`,
+      `• paid via ${order.paymentMethod ?? 'Not specified'}`,
+      `• status: **${status}**`,
+      `served by ${servedBy} 💙`,
+    ].join('\n'));
 
-  if (order.claimedBy) embed.addFields({ name: 'Claimed by', value: `<@${order.claimedBy}>`, inline: true });
-  if (order.processingBy) embed.addFields({ name: 'Processing by', value: `<@${order.processingBy}>`, inline: true });
   embed.setTimestamp(new Date(order.createdAt));
   return embed;
 }
@@ -167,17 +166,17 @@ function orderButtons(order) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`order:processing:${order.id}`)
-      .setLabel('Processing')
+      .setLabel('processing')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(!active || order.processingStatus === 'processing'),
     new ButtonBuilder()
       .setCustomId(`order:complete:${order.id}`)
-      .setLabel('Complete')
+      .setLabel('done')
       .setStyle(ButtonStyle.Success)
       .setDisabled(!active),
     new ButtonBuilder()
       .setCustomId(`order:cancel:${order.id}`)
-      .setLabel('Cancel')
+      .setLabel('cancelled')
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!active),
   );
