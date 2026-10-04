@@ -6,7 +6,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 
 1. Install Node.js 20 or newer, then run `npm install`.
 2. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications). Enable the `bot` and `applications.commands` scopes in its server install link. Enable the privileged **Message Content Intent** in the bot settings to use message-command shortcuts. The bot needs permission to view and send messages, embed links, manage channels and roles for private tickets, and use application commands.
-3. Copy `.env.example` to `.env`, then fill in the bot token and application client ID. Set `DISCORD_GUILD_ID` to register commands immediately in one server while testing; leave it blank for global registration.
+3. Copy `.env.example` to `.env`, then fill in the bot token and application client ID. Commands are registered globally on startup. Set `DISCORD_GUILD_ID` to also register them immediately in one development server while global registration propagates.
 4. Run `npm run deploy`, invite the bot to your server, and start it with `npm start`.
 5. An administrator runs `/setup channel:#orders`. Optionally choose a staff role; without one, staff actions require the Discord `Manage Messages` permission.
 
