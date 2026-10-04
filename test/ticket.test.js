@@ -463,7 +463,7 @@ test('vouch embed matches the order-details layout and Philippine time zone', ()
   assert.deepEqual(embed.fields.map(({ name, value }) => [name, value]), [
     ['✨ • order details', '**buyer:** <@user-123>'],
     ['🔹 item', '1 Deco'],
-    ['🔹 date vouched', 'October 05, 2026 at 6:53 AM GMT+8'],
+    ['🔹 date vouched', 'October 05, 2026 at 6:53 AM PHT (UTC+8)'],
     ['🔹 feedback', 'Great service!'],
     ['🔹 proof', 'See the attached proof image below.'],
   ]);

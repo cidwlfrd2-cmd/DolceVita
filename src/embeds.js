@@ -100,8 +100,7 @@ function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
     hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
-    timeZoneName: 'short',
-  }).format(vouchedAt);
+  }).format(vouchedAt) + ' PHT (UTC+8)';
   return new EmbedBuilder()
     .setColor(0x35a16b)
     .addFields(

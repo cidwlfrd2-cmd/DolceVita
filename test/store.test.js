@@ -280,8 +280,7 @@ test('vouch embed omits warranty text and shows the date in Philippine time', ()
     hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
-    timeZoneName: 'short',
-  }).format(date);
+  }).format(date) + ' PHT (UTC+8)';
   assert.equal(vouchDateField.value, expected);
 });
 
