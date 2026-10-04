@@ -3,6 +3,20 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 const EMPTY_STATE = { settings: {}, orders: [], vouches: [], stickyMessages: {} };
+const ORDER_ACTIVE_DURATION_MS = 48 * 60 * 60 * 1000;
+
+function expireActiveOrders(state, now = Date.now()) {
+  let changed = false;
+  for (const order of state.orders) {
+    if (!['pending', 'claimed'].includes(order.status)) continue;
+    const createdAt = new Date(order.createdAt).getTime();
+    if (!Number.isFinite(createdAt) || now < createdAt + ORDER_ACTIVE_DURATION_MS) continue;
+    order.status = 'expired';
+    order.expiredAt = new Date(createdAt + ORDER_ACTIVE_DURATION_MS).toISOString();
+    changed = true;
+  }
+  return changed;
+}
 
 class OrderStore {
   constructor(filePath = path.join(process.cwd(), 'data', 'orders.json')) {
@@ -31,7 +45,7 @@ class OrderStore {
     this.write(state);
   }
 
-  addVouch({ guildId, userId, items }) {
+  addVouch({ guildId, userId, items, createdAt = new Date().toISOString() }) {
     const state = this.read();
     state.vouches ??= [];
     const vouch = {
@@ -39,7 +53,7 @@ class OrderStore {
       guildId,
       userId,
       items,
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
     state.vouches.push(vouch);
     this.write(state);
@@ -122,17 +136,23 @@ class OrderStore {
   }
 
   listActive(guildId) {
-    return this.read().orders
+    const state = this.read();
+    if (expireActiveOrders(state)) this.write(state);
+    return state.orders
       .filter((order) => order.guildId === guildId && ['pending', 'claimed'].includes(order.status))
       .sort((first, second) => first.createdAt.localeCompare(second.createdAt));
   }
 
   claimNext(guildId, staffId) {
     const state = this.read();
+    const expiredOrders = expireActiveOrders(state);
     const order = state.orders
       .filter((entry) => entry.guildId === guildId && entry.status === 'pending')
       .sort((first, second) => first.createdAt.localeCompare(second.createdAt))[0];
-    if (!order) return null;
+    if (!order) {
+      if (expiredOrders) this.write(state);
+      return null;
+    }
     order.status = 'claimed';
     order.claimedBy = staffId;
     this.write(state);
@@ -141,8 +161,12 @@ class OrderStore {
 
   markProcessing(orderId, staffId) {
     const state = this.read();
+    const expiredOrders = expireActiveOrders(state);
     const order = state.orders.find((entry) => entry.id === orderId);
-    if (!order || !['pending', 'claimed'].includes(order.status)) return null;
+    if (!order || !['pending', 'claimed'].includes(order.status)) {
+      if (expiredOrders) this.write(state);
+      return null;
+    }
     if (order.status === 'pending') {
       order.status = 'claimed';
       order.claimedBy = staffId;
@@ -158,8 +182,12 @@ class OrderStore {
       throw new Error(`Unsupported final status: ${status}`);
     }
     const state = this.read();
+    const expiredOrders = expireActiveOrders(state);
     const order = state.orders.find((entry) => entry.id === orderId);
-    if (!order || !['pending', 'claimed'].includes(order.status)) return null;
+    if (!order || !['pending', 'claimed'].includes(order.status)) {
+      if (expiredOrders) this.write(state);
+      return null;
+    }
     order.status = status;
     order.finishedAt = new Date().toISOString();
     if (status === 'cancelled') {

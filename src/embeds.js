@@ -10,15 +10,17 @@ const {
 const { orderStatusLabel } = require('./order-status');
 const { orderReference } = require('./order-reference');
 
-const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c };
-const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
+const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
+const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
 
 function orderEmbed(order) {
   const status = order.status === 'completed'
     ? 'Completed'
     : order.status === 'cancelled'
       ? 'Cancelled'
-        : order.processingStatus === 'processing' ? 'Processing' : 'Noted';
+        : order.status === 'expired'
+          ? 'Expired'
+          : order.processingStatus === 'processing' ? 'Processing' : 'Noted';
   const customerBy = order.customerId ? `<@${order.customerId}>` : 'Unknown customer';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
   const embed = new EmbedBuilder()
@@ -90,22 +92,30 @@ function paymentReminderEmbed(serverIconUrl) {
   return embed;
 }
 
-function vouchEmbed(user, items, feedback) {
+function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
+  const date = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  }).format(vouchedAt);
   return new EmbedBuilder()
     .setColor(0x35a16b)
-    .setTitle('Customer Vouch')
     .setDescription([
-      '## WARRANTY SLIP',
-      '**: Applies only to** `NITRO, PREMSUBS, BOOSTS`',
-      '**: Ignore this if you purchased** `ROBUX, GAMECREDITS`',
-      '**: Show this warranty if your item get revoked**',
+      ': Applies only to `NITRO, PREMSUBS, BOOSTS`',
+      ': Ignore this if you purchased `ROBUX, GAMECREDITS`',
+      ': Show this warranty if your item get revoked',
     ].join('\n'))
-    .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
     .addFields(
-      { name: 'Items', value: items },
-      { name: 'Feedback', value: feedback },
-    )
-    .setTimestamp();
+      { name: '✨ • order details', value: `**buyer:** <@${user.id}>`, inline: false },
+      { name: '🔹 item', value: items, inline: false },
+      { name: '🔹 date vouched', value: date, inline: false },
+      { name: '🔹 feedback', value: feedback, inline: false },
+      { name: '🔹 proof', value: 'See the attached proof image below.', inline: false },
+    );
 }
 
 function orderCompletionReminderEmbed() {
@@ -137,6 +147,19 @@ function paymentReminderButtons() {
       .setCustomId('payment:no')
       .setLabel('no')
       .setStyle(ButtonStyle.Danger),
+  );
+}
+
+function vouchPreviewButtons(previewId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`vouch-preview:confirm:${previewId}`)
+      .setLabel('Confirm vouch')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`vouch-preview:change:${previewId}`)
+      .setLabel("No, I'll change it")
+      .setStyle(ButtonStyle.Secondary),
   );
 }
 
@@ -179,7 +202,7 @@ function queueEmbed(orders) {
 }
 
 function helpEmbed(commands) {
-  const lines = [];
+  const lines = ['## Slash commands'];
   for (const command of commands) {
     const subcommands = command.options?.filter((option) => option.type === 1) ?? [];
     if (subcommands.length) {
@@ -194,17 +217,22 @@ function helpEmbed(commands) {
     )) ?? [];
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
+  lines.push('', '## Message shortcuts');
   lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
   lines.push('**,payment** — Show the Dolce Vita payment reminders.');
   lines.push('**,solving <number> <number>** — Multiply two numbers, then automatically delete the command message.');
-  lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
-  lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
-  lines.push('**/setupticketcategory <category_id>** or **,setupticketcategory <category id>** — Set the parent category for new tickets (administrator only).');
+  lines.push('**,ordercategory <channel_id>** — Set the category for new order tickets (administrator only).');
+  lines.push('**,reportcategory <channel_id>** — Set the category for new report tickets (administrator only).');
+  lines.push('**,othercategory <channel_id>** — Set the category for new other tickets (administrator only).');
+  lines.push('**,setupticketcategory <category_id>** — Set the fallback category for all ticket types (administrator only).');
   lines.push('**,setorder <channel_id>** — Set the channel for new orders (administrator only).');
   lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
   lines.push('**,setvoided <channel id>** — Set the voided-order alert channel (administrator only).');
   lines.push('**,setvoidedrole <role_id>** — Set the role granted to members marked as voided (administrator only).');
   lines.push('**,help** — Show this command list.');
+  lines.push('', '## Ticket notes');
+  lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
+  lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -304,10 +332,11 @@ function othersTicketModal() {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('ticket-others-message')
-          .setLabel('Tell us about your partnership or concern')
-          .setStyle(TextInputStyle.Paragraph)
+          .setLabel('PARTNERSHIP / CONCERN')
+          .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setMaxLength(1024),
+          .setMaxLength(20)
+          .setPlaceholder('Type PARTNERSHIP or CONCERN'),
       ),
     );
 }
@@ -333,7 +362,7 @@ function ticketEmbed(type, user, orderForm, reportForm, othersForm) {
     );
   }
   if (othersForm) {
-    embed.addFields({ name: 'PARTNERSHIP / CONCERN', value: othersForm.message });
+    embed.addFields({ name: 'PARTNERSHIP / CONCERN', value: othersForm.type });
   }
   return embed;
 }
@@ -359,32 +388,46 @@ function ticketButtons(claimed = false) {
   return new ActionRowBuilder().addComponents(...buttons);
 }
 
+function ticketCloseConfirmationEmbed(channel) {
+  return new EmbedBuilder()
+    .setColor(0xe6a23c)
+    .setTitle('Confirm Ticket Closure')
+    .setDescription(`Are you sure you want to close ${channel}?`);
+}
+
+function ticketCloseConfirmationButtons(confirmationId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket-close:confirm:${confirmationId}`)
+      .setLabel('Confirm Close')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`ticket-close:cancel:${confirmationId}`)
+      .setLabel("No, don't close")
+      .setStyle(ButtonStyle.Secondary),
+  );
+}
+
 function ticketTranscriptEmbed({
   channelId,
-  channelName,
+  createdAt,
   ownerId,
   closedById,
   claimedById,
-  messageCount,
-  transcriptPreview,
+  reason = 'done',
 }) {
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(0x3478c7)
-    .setTitle('Ticket Transcript')
-    .setDescription([
-      `Transcript from **#${channelName}**. The complete conversation is attached as a text file.`,
-      '',
-      transcriptPreview ? `**Recent conversation excerpt:**\n${transcriptPreview}` : '',
-    ].filter(Boolean).join('\n'))
+    .setTitle('Ticket Closed')
     .addFields(
-      { name: 'Ticket', value: `<#${channelId}>`, inline: true },
-      { name: 'Opened by', value: `<@${ownerId}>`, inline: true },
-      { name: 'Closed by', value: `<@${closedById}>`, inline: true },
-      { name: 'Messages', value: String(messageCount), inline: true },
+      { name: '🔢 Ticket ID', value: channelId, inline: true },
+      { name: '✅ Opened By', value: `<@${ownerId}>`, inline: true },
+      { name: '🔒 Closed By', value: `<@${closedById}>`, inline: true },
+      { name: '🕒 Open Time', value: `<t:${Math.floor(createdAt.getTime() / 1000)}:f>`, inline: true },
+      { name: '🟣 Claimed By', value: claimedById ? `<@${claimedById}>` : 'Unclaimed', inline: true },
+      { name: '❔ Reason', value: reason, inline: true },
     )
     .setTimestamp();
-  if (claimedById) embed.addFields({ name: 'Claimed by', value: `<@${claimedById}>`, inline: true });
-  return embed;
 }
 
 module.exports = {
@@ -398,12 +441,15 @@ module.exports = {
   vouchEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
+  vouchPreviewButtons,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
   queueEmbed,
   reportTicketModal,
   ticketButtons,
+  ticketCloseConfirmationEmbed,
+  ticketCloseConfirmationButtons,
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,

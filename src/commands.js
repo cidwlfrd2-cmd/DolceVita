@@ -197,4 +197,17 @@ module.exports = [
       .setDescription('ID of the category where new tickets will be created')
       .setRequired(true)
       .setMaxLength(20)),
+  ...[
+    ['ordercategory', 'Choose the category for order tickets.'],
+    ['reportcategory', 'Choose the category for report tickets.'],
+    ['othercategory', 'Choose the category for other tickets.'],
+  ].map(([name, description]) => new SlashCommandBuilder()
+    .setName(name)
+    .setDescription(description)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption((option) => option
+      .setName('category_id')
+      .setDescription('ID of the category where these tickets will be created')
+      .setRequired(true)
+      .setMaxLength(20))),
 ].map((command) => command.toJSON());

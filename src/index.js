@@ -7,6 +7,7 @@ const {
   GatewayIntentBits,
   PermissionFlagsBits,
 } = require('discord.js');
+const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { OrderStore } = require('./store');
 const {
@@ -17,6 +18,7 @@ const {
   multiplicationEmbed,
   paymentReminderEmbed,
   vouchEmbed,
+  vouchPreviewButtons,
   voidedOrderEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
@@ -26,6 +28,8 @@ const {
   queueEmbed,
   reportTicketModal,
   ticketButtons,
+  ticketCloseConfirmationEmbed,
+  ticketCloseConfirmationButtons,
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
@@ -44,6 +48,7 @@ const {
 } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { parseOrderTicketForm } = require('./order-ticket-form');
+const { parseOthersTicketForm } = require('./others-ticket-form');
 const { multiplyAmounts } = require('./multiplication');
 const { replyThenDeleteCommand } = require('./message-command-actions');
 const commands = require('./commands');
@@ -59,6 +64,156 @@ const client = new Client({
 const stickyRefreshes = new Map();
 const ticketClaimLocks = new Map();
 const scheduledVoidChecks = new Map();
+const pendingTicketClosures = new Map();
+const TICKET_CLOSE_CONFIRMATION_DURATION_MS = 5 * 60 * 1000;
+const pendingVouchPreviews = new Map();
+const VOUCH_PREVIEW_DURATION_MS = 15 * 60 * 1000;
+
+function discardVouchPreview(previewId) {
+  const preview = pendingVouchPreviews.get(previewId);
+  if (!preview) return;
+  clearTimeout(preview.timeoutId);
+  pendingVouchPreviews.delete(previewId);
+}
+
+async function handleVouchPreviewButton(interaction) {
+  const [, action, previewId] = interaction.customId.split(':');
+  const preview = pendingVouchPreviews.get(previewId);
+  if (!preview
+    || preview.guildId !== interaction.guildId
+    || preview.userId !== interaction.user.id) {
+    return interaction.reply({
+      content: 'This vouch preview is no longer available. Please run `/vouch` again.',
+      ephemeral: true,
+    });
+  }
+  if (preview.processing) {
+    return interaction.reply({ content: 'Your vouch is already being posted.', ephemeral: true });
+  }
+  if (action === 'change') {
+    discardVouchPreview(previewId);
+    return interaction.update({
+      content: 'Vouch cancelled. Run `/vouch` again with your changes.',
+      embeds: [],
+      components: [],
+      attachments: [],
+    });
+  }
+  if (action !== 'confirm') {
+    return interaction.reply({ content: 'This vouch action is not valid.', ephemeral: true });
+  }
+
+  preview.processing = true;
+  await interaction.deferUpdate();
+  try {
+    const channel = await client.channels.fetch(preview.channelId);
+    if (!channel
+      || channel.guildId !== interaction.guildId
+      || !channel.isTextBased()
+      || typeof channel.send !== 'function') {
+      throw new Error(`Vouch channel ${preview.channelId} is unavailable or not a sendable server text channel.`);
+    }
+    await channel.send({
+      embeds: [preview.embed],
+      files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
+      allowedMentions: { parse: [] },
+    });
+    store.addVouch({
+      guildId: preview.guildId,
+      userId: preview.userId,
+      items: preview.items,
+      createdAt: preview.vouchedAt.toISOString(),
+    });
+    let ownerDmSent = false;
+    if (preview.ticketOwnerDmId) {
+      try {
+        const owner = await client.users.fetch(preview.ticketOwnerDmId);
+        await owner.send({
+          embeds: [preview.embed],
+          files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
+          allowedMentions: { parse: [] },
+        });
+        ownerDmSent = true;
+      } catch (error) {
+        console.error(`Could not DM vouch ${preview.items} to ticket owner ${preview.ticketOwnerDmId}:`, error);
+      }
+    }
+    discardVouchPreview(previewId);
+    await interaction.editReply({
+      content: `Your vouch was posted in ${channel}.`
+        + (preview.ticketOwnerDmId
+          ? ownerDmSent
+            ? ' A copy was also sent to you by DM.'
+            : ' I could not send you a DM copy; please check your DM settings.'
+          : ''),
+      embeds: [],
+      components: [],
+      attachments: [],
+    });
+  } catch (error) {
+    preview.processing = false;
+    throw error;
+  }
+}
+
+function discardTicketClosure(confirmationId) {
+  const confirmation = pendingTicketClosures.get(confirmationId);
+  if (!confirmation) return;
+  clearTimeout(confirmation.timeoutId);
+  pendingTicketClosures.delete(confirmationId);
+}
+
+async function handleTicketCloseConfirmation(interaction) {
+  const [, action, confirmationId] = interaction.customId.split(':');
+  const confirmation = pendingTicketClosures.get(confirmationId);
+  if (!confirmation
+    || confirmation.guildId !== interaction.guildId
+    || confirmation.userId !== interaction.user.id
+    || confirmation.channelId !== interaction.channelId) {
+    return interaction.reply({
+      content: 'This ticket-close confirmation is no longer available. Please try again.',
+      ephemeral: true,
+    });
+  }
+  if (action === 'cancel') {
+    discardTicketClosure(confirmationId);
+    return interaction.update({
+      content: 'Ticket closure cancelled. The ticket remains open.',
+      embeds: [],
+      components: [],
+    });
+  }
+  if (action !== 'confirm') {
+    return interaction.reply({ content: 'This ticket action is not valid.', ephemeral: true });
+  }
+
+  const channel = interaction.channel;
+  const ownerId = ticketOwnerId(channel);
+  if (!channel || !ownerId || ownerId !== confirmation.ownerId) {
+    discardTicketClosure(confirmationId);
+    return interaction.update({
+      content: 'This ticket is no longer active.',
+      embeds: [],
+      components: [],
+    });
+  }
+  if (confirmation.source === 'customer' && interaction.user.id !== ownerId) {
+    return interaction.reply({ content: 'Only the ticket creator can close this ticket.', ephemeral: true });
+  }
+  if (confirmation.source === 'staff') {
+    const settings = store.getSettings(interaction.guildId);
+    if (!hasTicketManagerRole(settings, (roleId) => memberHasRole(interaction, roleId))) {
+      discardTicketClosure(confirmationId);
+      return interaction.update({
+        content: 'Your permission to close this ticket has changed. The ticket remains open.',
+        embeds: [],
+        components: [],
+      });
+    }
+  }
+  discardTicketClosure(confirmationId);
+  return closeTicketChannel(interaction, channel, ownerId);
+}
 
 function scheduleVoidCheckForOrder(order) {
   if (!order || order.status !== 'completed' || order.voidedAt) return;
@@ -162,6 +317,30 @@ async function getTicketMessages(channel) {
   return messages.sort((first, second) => first.createdTimestamp - second.createdTimestamp);
 }
 
+async function requestTicketClosure(interaction, channel, ownerId, source) {
+  const settings = store.getSettings(interaction.guildId);
+  if (!settings?.ticketTranscriptChannelId) {
+    return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+  }
+  const confirmationId = randomUUID();
+  const timeoutId = setTimeout(() => discardTicketClosure(confirmationId), TICKET_CLOSE_CONFIRMATION_DURATION_MS);
+  timeoutId.unref();
+  pendingTicketClosures.set(confirmationId, {
+    guildId: interaction.guildId,
+    channelId: channel.id,
+    ownerId,
+    userId: interaction.user.id,
+    source,
+    timeoutId,
+  });
+  return interaction.reply({
+    embeds: [ticketCloseConfirmationEmbed(channel)],
+    components: [ticketCloseConfirmationButtons(confirmationId)],
+    allowedMentions: { parse: [] },
+    ephemeral: true,
+  });
+}
+
 async function closeTicketChannel(interaction, channel, ownerId) {
   const settings = store.getSettings(interaction.guildId);
   if (!settings?.ticketTranscriptChannelId) {
@@ -175,24 +354,39 @@ async function closeTicketChannel(interaction, channel, ownerId) {
   const messages = await getTicketMessages(channel);
   const transcript = ticketTranscriptText(messages);
   const claimedMatch = channel.topic.match(/(?:^|;)ticket-claimed:(\d+)(?:;|$)/);
+  const transcriptEmbed = ticketTranscriptEmbed({
+    channelId: channel.id,
+    createdAt: channel.createdAt,
+    ownerId,
+    closedById: interaction.user.id,
+    claimedById: claimedMatch?.[1],
+  });
+  const transcriptFile = {
+    attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
+    name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
+  };
   await transcriptChannel.send({
-    embeds: [ticketTranscriptEmbed({
-      channelId: channel.id,
-      channelName: channel.name,
-      ownerId,
-      closedById: interaction.user.id,
-      claimedById: claimedMatch?.[1],
-      messageCount: messages.length,
-      transcriptPreview: transcript.slice(-3000),
-    })],
-    files: [{
-      attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
-      name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
-    }],
+    embeds: [transcriptEmbed],
+    files: [transcriptFile],
     allowedMentions: { parse: [] },
   });
+  let ownerNotified = true;
+  try {
+    const owner = await client.users.fetch(ownerId);
+    await owner.send({
+      embeds: [transcriptEmbed],
+      files: [transcriptFile],
+      allowedMentions: { parse: [] },
+    });
+  } catch (error) {
+    ownerNotified = false;
+    console.error(`Could not DM the ticket transcript for ${channel.id} to owner ${ownerId}:`, error);
+  }
   await channel.delete(`Ticket closed by ${interaction.user.tag}; transcript posted in ${transcriptChannel.id}`);
-  return interaction.editReply(`Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`);
+  return interaction.editReply(
+    `Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`
+    + (ownerNotified ? ' A copy was also sent to the ticket owner by DM.' : ' I could not DM the ticket owner; they may have DMs disabled.'),
+  );
 }
 
 function isOrderStaff(interaction) {
@@ -324,10 +518,16 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       });
     }
     let parent;
-    if (settings?.ticketCategoryId) {
-      parent = await fetchGuildChannelById(guild, settings.ticketCategoryId);
+    const categorySettingKey = {
+      order: 'ticketOrderCategoryId',
+      report: 'ticketReportCategoryId',
+      others: 'ticketOthersCategoryId',
+    }[type];
+    const categoryId = settings?.[categorySettingKey] ?? settings?.ticketCategoryId;
+    if (categoryId) {
+      parent = await fetchGuildChannelById(guild, categoryId);
       if (parent.type !== ChannelType.GuildCategory) {
-        throw new Error(`Configured ticket category ${settings.ticketCategoryId} is not a category.`);
+        throw new Error(`Configured ticket category ${categoryId} is not a category.`);
       }
     }
 
@@ -335,7 +535,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       name: ticketChannelName(
         type,
         interaction.user.username,
-        orderForm?.product ?? reportForm?.product ?? othersForm?.message,
+        orderForm?.product ?? reportForm?.product ?? othersForm?.type,
       ),
       type: ChannelType.GuildText,
       ...(parent ? { parent: parent.id } : {}),
@@ -381,6 +581,30 @@ async function handleCommand(interaction) {
     }
     store.setSettings(interaction.guildId, { ticketCategoryId: category.id });
     return interaction.reply({ content: `New ticket channels will be created in **${category.name}**.`, ephemeral: true });
+  }
+
+  const ticketCategorySettings = {
+    ordercategory: ['ticketOrderCategoryId', 'order'],
+    reportcategory: ['ticketReportCategoryId', 'report'],
+    othercategory: ['ticketOthersCategoryId', 'other'],
+  };
+  if (ticketCategorySettings[interaction.commandName]) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only server administrators can configure ticket categories.', ephemeral: true });
+    }
+    const [settingKey, label] = ticketCategorySettings[interaction.commandName];
+    const categoryId = interaction.options.getString('category_id', true).trim();
+    let category;
+    try {
+      category = await fetchGuildChannelById(interaction.guild, categoryId);
+    } catch (error) {
+      return interaction.reply({ content: error.message, ephemeral: true });
+    }
+    if (category.type !== ChannelType.GuildCategory) {
+      return interaction.reply({ content: 'That ID is not a category in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { [settingKey]: category.id });
+    return interaction.reply({ content: `New ${label} tickets will be created in **${category.name}**.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'ticket' && interaction.options.getSubcommand() === 'setup') {
@@ -580,6 +804,12 @@ async function handleCommand(interaction) {
 
     await interaction.deferReply({ ephemeral: true });
     const channel = await client.channels.fetch(settings.vouchChannelId);
+    if (!channel
+      || channel.guildId !== interaction.guildId
+      || !channel.isTextBased()
+      || typeof channel.send !== 'function') {
+      throw new Error(`Vouch channel ${settings.vouchChannelId} is unavailable or not a sendable server text channel.`);
+    }
     let proofCollage = null;
     try {
       const imageBuffers = [];
@@ -593,15 +823,32 @@ async function handleCommand(interaction) {
       console.error('Could not create vouch proof collage:', error);
       return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
     }
-    const embed = vouchEmbed(interaction.user, items, feedback);
+    const vouchedAt = new Date();
+    const embed = vouchEmbed(interaction.user, items, feedback, vouchedAt);
     embed.setImage('attachment://vouch-proofs.png');
-    await channel.send({
+    const previewId = randomUUID();
+    const timeoutId = setTimeout(() => discardVouchPreview(previewId), VOUCH_PREVIEW_DURATION_MS);
+    timeoutId.unref();
+    pendingVouchPreviews.set(previewId, {
+      guildId: interaction.guildId,
+      userId: interaction.user.id,
+      channelId: channel.id,
+      items,
+      vouchedAt,
+      ticketOwnerDmId: ticketOwnerId(interaction.channel) === interaction.user.id
+        ? interaction.user.id
+        : null,
+      embed,
+      proofCollage,
+      timeoutId,
+    });
+    return interaction.editReply({
+      content: 'Preview your vouch below. Confirm to post it, or choose “No, I’ll change it” and run `/vouch` again.',
       embeds: [embed],
+      components: [vouchPreviewButtons(previewId)],
       files: [{ attachment: proofCollage, name: 'vouch-proofs.png' }],
       allowedMentions: { parse: [] },
     });
-    store.addVouch({ guildId: interaction.guildId, userId: interaction.user.id, items });
-    return interaction.editReply(`Your vouch was posted in ${channel}.`);
   }
 
   if (interaction.commandName === 'checkvouch') {
@@ -771,24 +1018,24 @@ async function handleTicketButton(interaction) {
     if (!hasTicketManagerRole(settings, (roleId) => memberHasRole(interaction, roleId))) {
       return interaction.reply({ content: 'Only members with the configured `/setadmin` or `/setowner` role can close tickets.', ephemeral: true });
     }
-    return closeTicketChannel(interaction, channel, ownerId);
+    return requestTicketClosure(interaction, channel, ownerId, 'staff');
   }
 }
 
 async function handleTicketModal(interaction) {
   if (interaction.customId === 'ticket:others-form') {
-    const othersForm = {
-      message: interaction.fields.getTextInputValue('ticket-others-message').trim(),
-    };
-    if (!othersForm.message) {
-      return interaction.reply({ content: 'Please describe your partnership or concern.', ephemeral: true });
+    const result = parseOthersTicketForm({
+      type: interaction.fields.getTextInputValue('ticket-others-message'),
+    });
+    if (result.error) {
+      return interaction.reply({ content: result.error, ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
-    const result = await createTicketChannel(interaction, 'others', undefined, undefined, othersForm);
-    if (!result.created) {
-      return interaction.editReply(`You already have an active ticket: ${result.channel}. Close it before opening another.`);
+    const ticketResult = await createTicketChannel(interaction, 'others', undefined, undefined, result.value);
+    if (!ticketResult.created) {
+      return interaction.editReply(`You already have an active ticket: ${ticketResult.channel}. Close it before opening another.`);
     }
-    return interaction.editReply(`Your others ticket is ready: ${result.channel}`);
+    return interaction.editReply(`Your others ticket is ready: ${ticketResult.channel}`);
   }
 
   if (interaction.customId === 'ticket:report-form') {
@@ -910,7 +1157,7 @@ async function handlePaymentButton(interaction) {
     });
   }
   if (interaction.customId === 'payment:no') {
-    return closeTicketChannel(interaction, channel, ownerId);
+    return requestTicketClosure(interaction, channel, ownerId, 'customer');
   }
 }
 
@@ -922,6 +1169,8 @@ client.once('ready', async () => {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) await handleCommand(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('vouch-preview:')) await handleVouchPreviewButton(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('ticket-close:')) await handleTicketCloseConfirmation(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('payment:')) await handlePaymentButton(interaction);
@@ -1064,15 +1313,29 @@ client.on('messageCreate', async (message) => {
       await message.reply(`${role} will be granted to members marked as voided.`);
       return;
     }
-    if (messageCommand?.name === 'setupticketcategory' || messageCommand?.name === 'set_ticket_transcript') {
+    const ticketCategoryShortcuts = {
+      ordercategory: ['ticketOrderCategoryId', 'order'],
+      reportcategory: ['ticketReportCategoryId', 'report'],
+      othercategory: ['ticketOthersCategoryId', 'other'],
+    };
+    if (messageCommand?.name === 'setupticketcategory'
+      || messageCommand?.name === 'set_ticket_transcript'
+      || ticketCategoryShortcuts[messageCommand?.name]) {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await message.reply('Only server administrators can configure ticket channels.');
         return;
       }
       if (messageCommand.args.length !== 1) {
-        const usage = messageCommand.name === 'setupticketcategory'
-          ? 'Usage: `,setupticketcategory <category id>`'
-          : 'Usage: `,set ticket_transcript <channel id>`';
+        const shortcutLabels = {
+          ordercategory: 'ordercategory',
+          reportcategory: 'reportcategory',
+          othercategory: 'othercategory',
+        };
+        const usage = ticketCategoryShortcuts[messageCommand.name]
+          ? `Usage: \`,${shortcutLabels[messageCommand.name]} <category_id>\``
+          : messageCommand.name === 'setupticketcategory'
+            ? 'Usage: `,setupticketcategory <category id>`'
+            : 'Usage: `,set ticket_transcript <channel id>`';
         await message.reply(usage);
         return;
       }
@@ -1091,6 +1354,14 @@ client.on('messageCreate', async (message) => {
         }
         store.setSettings(message.guild.id, { ticketCategoryId: channel.id });
         await message.reply(`New ticket channels will be created in **${channel.name}**.`);
+      } else if (ticketCategoryShortcuts[messageCommand.name]) {
+        if (channel.type !== ChannelType.GuildCategory) {
+          await message.reply('That ID is not a category in this server.');
+          return;
+        }
+        const [settingKey, label] = ticketCategoryShortcuts[messageCommand.name];
+        store.setSettings(message.guild.id, { [settingKey]: channel.id });
+        await message.reply(`New ${label} tickets will be created in **${channel.name}**.`);
       } else {
         if (!channel.isTextBased() || typeof channel.send !== 'function') {
           await message.reply('That ID is not a sendable text channel in this server.');

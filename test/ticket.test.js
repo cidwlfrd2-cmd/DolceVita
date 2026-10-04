@@ -8,10 +8,13 @@ const {
   reportTicketModal,
   othersTicketModal,
   ticketTranscriptEmbed,
+  ticketCloseConfirmationEmbed,
+  ticketCloseConfirmationButtons,
   helpEmbed,
   multiplicationEmbed,
   paymentReminderEmbed,
   vouchEmbed,
+  vouchPreviewButtons,
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderCompletionReminderEmbed,
@@ -29,6 +32,7 @@ const {
 } = require('../src/ticket-permissions');
 const { voidedOrderEmbed } = require('../src/embeds');
 const { parseOrderTicketForm } = require('../src/order-ticket-form');
+const { parseOthersTicketForm } = require('../src/others-ticket-form');
 const { multiplyAmounts } = require('../src/multiplication');
 const { replyThenDeleteCommand } = require('../src/message-command-actions');
 
@@ -116,7 +120,33 @@ test('others ticket modal requires a partnership or concern description', () => 
   const modal = othersTicketModal().toJSON();
   assert.equal(modal.title, 'PARTNERSHIP / CONCERN');
   assert.equal(modal.components.length, 1);
-  assert.equal(modal.components[0].components[0].required, true);
+  assert.deepEqual(
+    {
+      label: modal.components[0].components[0].label,
+      placeholder: modal.components[0].components[0].placeholder,
+      required: modal.components[0].components[0].required,
+    },
+    {
+      label: 'PARTNERSHIP / CONCERN',
+      placeholder: 'Type PARTNERSHIP or CONCERN',
+      required: true,
+    },
+  );
+});
+
+test('others ticket form accepts only partnership or concern', () => {
+  assert.deepEqual(parseOthersTicketForm({ type: ' partnership ' }), {
+    value: { type: 'PARTNERSHIP' },
+  });
+  assert.deepEqual(parseOthersTicketForm({ type: 'Concern' }), {
+    value: { type: 'CONCERN' },
+  });
+  assert.deepEqual(parseOthersTicketForm({ type: 'question' }), {
+    error: 'Please enter exactly PARTNERSHIP or CONCERN.',
+  });
+  assert.deepEqual(parseOthersTicketForm({ type: '' }), {
+    error: 'Please enter exactly PARTNERSHIP or CONCERN.',
+  });
 });
 
 test('order ticket embed includes the submitted form answers', () => {
@@ -155,12 +185,12 @@ test('report ticket embed includes all submitted report form answers', () => {
 
 test('others ticket embed includes the submitted partnership or concern', () => {
   const embed = ticketEmbed('others', { id: 'user-1' }, undefined, undefined, {
-    message: 'I would like to discuss a partnership.',
+    type: 'PARTNERSHIP',
   }).toJSON();
 
   assert.deepEqual(
     embed.fields.map((field) => [field.name, field.value]),
-    [['PARTNERSHIP / CONCERN', 'I would like to discuss a partnership.']],
+    [['PARTNERSHIP / CONCERN', 'PARTNERSHIP']],
   );
 });
 
@@ -180,6 +210,18 @@ test('ticket action buttons include claim and close, disabling claim after assig
   assert.equal(claimedButtons[1].label, 'Unclaim Ticket');
   assert.notEqual(claimedButtons[1].disabled, true);
   assert.notEqual(claimedButtons[2].disabled, true);
+});
+
+test('ticket close confirmation embed asks before closing and offers confirm or cancel', () => {
+  const embed = ticketCloseConfirmationEmbed({ toString: () => '<#ticket-1>' }).toJSON();
+  assert.equal(embed.title, 'Confirm Ticket Closure');
+  assert.equal(embed.description, 'Are you sure you want to close <#ticket-1>?');
+
+  const buttons = ticketCloseConfirmationButtons('confirm-123').toJSON().components;
+  assert.deepEqual(buttons.map(({ custom_id, label }) => [custom_id, label]), [
+    ['ticket-close:confirm:confirm-123', 'Confirm Close'],
+    ['ticket-close:cancel:confirm-123', "No, don't close"],
+  ]);
 });
 
 test('ticket access includes configured ticket, admin, and owner roles', () => {
@@ -300,6 +342,14 @@ test('/vouch accepts one required proof and an optional second proof', () => {
   );
 });
 
+test('vouch preview offers confirm and change actions', () => {
+  const buttons = vouchPreviewButtons('preview-123').toJSON().components;
+  assert.deepEqual(buttons.map(({ custom_id, label }) => [custom_id, label]), [
+    ['vouch-preview:confirm:preview-123', 'Confirm vouch'],
+    ['vouch-preview:change:preview-123', "No, I'll change it"],
+  ]);
+});
+
 test('/solving is registered with two required numeric amounts', () => {
   const command = commands.find((entry) => entry.name === 'solving');
   assert.ok(command);
@@ -365,21 +415,26 @@ test('payment reminder embed supports servers without a custom icon', () => {
   assert.equal(embed.thumbnail, undefined);
 });
 
-test('vouch embed includes the requested warranty slip as its description', () => {
+test('vouch embed matches the warranty notice and order-details layout', () => {
+  const vouchedAt = new Date('2026-10-04T22:53:00Z');
   const embed = vouchEmbed({
+    id: 'user-123',
     displayName: 'Alex',
     displayAvatarURL: () => 'https://example.test/avatar.png',
-  }, 'Robux', 'Great service!').toJSON();
+  }, '1 Deco', 'Great service!', vouchedAt).toJSON();
 
-  assert.equal(embed.description, [
-    '## WARRANTY SLIP',
-    '**: Applies only to** `NITRO, PREMSUBS, BOOSTS`',
-    '**: Ignore this if you purchased** `ROBUX, GAMECREDITS`',
-    '**: Show this warranty if your item get revoked**',
-  ].join('\n'));
+  assert.equal(embed.title, undefined);
+  assert.deepEqual(embed.description.split('\n'), [
+    ': Applies only to `NITRO, PREMSUBS, BOOSTS`',
+    ': Ignore this if you purchased `ROBUX, GAMECREDITS`',
+    ': Show this warranty if your item get revoked',
+  ]);
   assert.deepEqual(embed.fields.map(({ name, value }) => [name, value]), [
-    ['Items', 'Robux'],
-    ['Feedback', 'Great service!'],
+    ['✨ • order details', '**buyer:** <@user-123>'],
+    ['🔹 item', '1 Deco'],
+    ['🔹 date vouched', 'October 04, 2026 at 10:53 PM UTC'],
+    ['🔹 feedback', 'Great service!'],
+    ['🔹 proof', 'See the attached proof image below.'],
   ]);
 });
 
@@ -496,6 +551,18 @@ test('ticket category setup slash command takes a category ID and requires admin
   assert.equal(command.default_member_permissions, '8');
 });
 
+test('per-ticket category slash commands require an admin and category ID', () => {
+  for (const name of ['ordercategory', 'reportcategory', 'othercategory']) {
+    const command = commands.find((entry) => entry.name === name);
+    assert.ok(command);
+    assert.equal(command.default_member_permissions, '8');
+    assert.deepEqual(
+      command.options.map(({ name: optionName, required }) => ({ name: optionName, required })),
+      [{ name: 'category_id', required: true }],
+    );
+  }
+});
+
 test('ticket message command parser recognizes category and transcript setup aliases', () => {
   assert.deepEqual(parseTicketMessageCommand(',setupticketcategory 123456789012345678'), {
     name: 'setupticketcategory',
@@ -506,6 +573,15 @@ test('ticket message command parser recognizes category and transcript setup ali
     args: ['123456789012345678'],
   });
   assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
+});
+
+test('ticket message parser recognizes per-ticket category shortcuts', () => {
+  for (const name of ['ordercategory', 'reportcategory', 'othercategory']) {
+    assert.deepEqual(parseTicketMessageCommand(`,${name} 123456789012345678`), {
+      name,
+      args: ['123456789012345678'],
+    });
+  }
 });
 
 test('ticket message command parser recognizes payment reminder shortcut without arguments', () => {
@@ -546,6 +622,12 @@ test('help command lists registered commands, subcommands, and message shortcuts
     ',help',
     '/setupticketcategory',
     ',setupticketcategory',
+    '/ordercategory',
+    '/reportcategory',
+    '/othercategory',
+    ',ordercategory <channel_id>',
+    ',reportcategory <channel_id>',
+    ',othercategory <channel_id>',
     ',setorder <channel_id>',
     ',set ticket_transcript',
     ',setvoided <channel id>',
@@ -555,6 +637,8 @@ test('help command lists registered commands, subcommands, and message shortcuts
   }
   assert.match(embed.description, /unclaimed only by the current claimant/);
   assert.match(embed.description, /automatically delete the ticket channel/);
+  assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message shortcuts'));
+  assert.ok(embed.description.indexOf('## Message shortcuts') < embed.description.indexOf('## Ticket notes'));
   assert.ok(embed.description.length <= 4096);
 });
 
@@ -566,25 +650,39 @@ test('ticket transcript channel setup is registered under /set for administrator
   assert.equal(setCommand.default_member_permissions, '8');
 });
 
-test('ticket transcript embed includes ticket, participants, and message count', () => {
+test('ticket transcript embed shows the closure details in the requested layout', () => {
   const embed = ticketTranscriptEmbed({
-    channelId: 'ticket-channel',
-    channelName: 'order-latte-alex',
+    channelId: '282',
+    createdAt: new Date('2026-10-04T08:47:00Z'),
     ownerId: 'ticket-owner',
     closedById: 'staff-1',
     claimedById: 'staff-1',
-    messageCount: 3,
-    transcriptPreview: 'Alex: I need help.\nStaff: How can we help?',
   }).toJSON();
 
-  assert.equal(embed.title, 'Ticket Transcript');
-  assert.match(embed.description, /order-latte-alex/);
-  assert.match(embed.description, /Alex: I need help\./);
+  assert.equal(embed.title, 'Ticket Closed');
+  assert.equal(embed.description, undefined);
   assert.deepEqual(
-    embed.fields.map((field) => field.name),
-    ['Ticket', 'Opened by', 'Closed by', 'Messages', 'Claimed by'],
+    embed.fields.map(({ name, value, inline }) => [name, value, inline]),
+    [
+      ['🔢 Ticket ID', '282', true],
+      ['✅ Opened By', '<@ticket-owner>', true],
+      ['🔒 Closed By', '<@staff-1>', true],
+      ['🕒 Open Time', '<t:1791103620:f>', true],
+      ['🟣 Claimed By', '<@staff-1>', true],
+      ['❔ Reason', 'done', true],
+    ],
   );
-  assert.equal(embed.fields.find((field) => field.name === 'Messages').value, '3');
+});
+
+test('ticket transcript shows unclaimed tickets in the closure summary', () => {
+  const embed = ticketTranscriptEmbed({
+    channelId: '282',
+    createdAt: new Date('2026-10-04T08:47:00Z'),
+    ownerId: 'ticket-owner',
+    closedById: 'staff-1',
+  }).toJSON();
+
+  assert.equal(embed.fields.find(({ name }) => name === '🟣 Claimed By').value, 'Unclaimed');
 });
 
 test('ticket transcript text preserves message order, content, and attachment links', () => {

@@ -16,6 +16,10 @@ function parseTicketMessageCommand(content) {
   if (normalizedCommand === ',setupticketcategory') {
     return { name: 'setupticketcategory', args };
   }
+  if (['ordercategory', 'reportcategory', 'othercategory'].includes(normalizedCommand.slice(1))
+    && normalizedCommand.startsWith(',')) {
+    return { name: normalizedCommand.slice(1), args };
+  }
   if (normalizedCommand === ',setorder') {
     return { name: 'setorder', args };
   }

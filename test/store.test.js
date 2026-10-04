@@ -51,6 +51,81 @@ test('orders persist, can be claimed in order, and leave the active queue when f
   assert.deepEqual(restartedStore.listActive('guild-1'), []);
 });
 
+test('orders remain active until 48 hours and then expire from actions and the queue', () => {
+  const store = createStore();
+  const order = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-1',
+    sourceChannelId: 'source-1',
+    items: 'Latte',
+    paymentMethod: 'Card',
+    supporterId: 'staff-1',
+    quantity: 1,
+  });
+  const state = store.read();
+  const createdAt = Date.now() - (48 * 60 * 60 * 1000) + 60_000;
+  state.orders[0].createdAt = new Date(createdAt).toISOString();
+  store.write(state);
+
+  assert.deepEqual(store.listActive('guild-1').map((entry) => entry.id), [order.id]);
+  assert.equal(store.finishOrder(order.id, 'completed').status, 'completed');
+
+  const expiredByQueue = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-2',
+    sourceChannelId: 'source-2',
+    items: 'Tea',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-2',
+    quantity: 1,
+  });
+  const expiredByQueueState = store.read();
+  expiredByQueueState.orders.find((entry) => entry.id === expiredByQueue.id).createdAt =
+    new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  store.write(expiredByQueueState);
+
+  assert.deepEqual(store.listActive('guild-1'), []);
+  const expired = store.getOrder(expiredByQueue.id);
+  assert.equal(expired.status, 'expired');
+  assert.equal(
+    Date.parse(expired.expiredAt),
+    Date.parse(expired.createdAt) + 48 * 60 * 60 * 1000,
+  );
+  assert.ok(orderButtons(expired).toJSON().components.every((button) => button.disabled));
+
+  const expiredBeforeProcessing = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-3',
+    sourceChannelId: 'source-3',
+    items: 'Cake',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-3',
+    quantity: 1,
+  });
+  const processingState = store.read();
+  processingState.orders.find((entry) => entry.id === expiredBeforeProcessing.id).createdAt =
+    new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  store.write(processingState);
+  assert.equal(store.markProcessing(expiredBeforeProcessing.id, 'staff-3'), null);
+  assert.equal(store.getOrder(expiredBeforeProcessing.id).status, 'expired');
+
+  const expiredBeforeClaim = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-4',
+    sourceChannelId: 'source-4',
+    items: 'Coffee',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-4',
+    quantity: 1,
+  });
+  const claimState = store.read();
+  claimState.orders.find((entry) => entry.id === expiredBeforeClaim.id).createdAt =
+    new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  store.write(claimState);
+  assert.equal(store.claimNext('guild-1', 'staff-4'), null);
+  assert.equal(store.getOrder(expiredBeforeClaim.id).status, 'expired');
+});
+
 test('claim returns null when there are no pending orders', () => {
   const store = createStore();
   assert.equal(store.claimNext('guild-1', 'staff-1'), null);
