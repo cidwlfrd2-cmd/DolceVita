@@ -5,7 +5,8 @@
   "description": "Discord order intake and public queue bot",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/deploy-commands.js; node src/index.js",
+    "start:bot": "node src/index.js",
     "deploy": "node src/deploy-commands.js",
     "test": "node --test"
   },
