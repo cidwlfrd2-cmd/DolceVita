@@ -231,7 +231,7 @@ function helpEmbed(commands) {
   lines.push('**,help** — Show this command list.');
   lines.push('', '## Ticket notes');
   lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
-  lines.push('Ticket close actions post the transcript, then automatically delete the ticket channel.');
+  lines.push('Ticket close actions require a reason, post it in the transcript, then automatically delete the ticket channel.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -407,6 +407,23 @@ function ticketCloseConfirmationButtons(confirmationId) {
   );
 }
 
+function ticketCloseReasonModal(confirmationId) {
+  return new ModalBuilder()
+    .setCustomId(`ticket-close-reason:${confirmationId}`)
+    .setTitle('Ticket Closure Reason')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('ticket-close-reason')
+          .setLabel('Why are you closing this ticket?')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMaxLength(1000)
+          .setPlaceholder('Enter the reason for closing this ticket'),
+      ),
+    );
+}
+
 function ticketTranscriptEmbed({
   channelId,
   createdAt,
@@ -449,6 +466,7 @@ module.exports = {
   ticketButtons,
   ticketCloseConfirmationEmbed,
   ticketCloseConfirmationButtons,
+  ticketCloseReasonModal,
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,

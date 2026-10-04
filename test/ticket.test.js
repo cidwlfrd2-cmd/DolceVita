@@ -10,6 +10,7 @@ const {
   ticketTranscriptEmbed,
   ticketCloseConfirmationEmbed,
   ticketCloseConfirmationButtons,
+  ticketCloseReasonModal,
   helpEmbed,
   multiplicationEmbed,
   paymentReminderEmbed,
@@ -222,6 +223,31 @@ test('ticket close confirmation embed asks before closing and offers confirm or 
     ['ticket-close:confirm:confirm-123', 'Confirm Close'],
     ['ticket-close:cancel:confirm-123', "No, don't close"],
   ]);
+});
+
+test('ticket close reason modal requires a reason before closure', () => {
+  const modal = ticketCloseReasonModal('confirm-123').toJSON();
+  assert.equal(modal.custom_id, 'ticket-close-reason:confirm-123');
+  assert.equal(modal.title, 'Ticket Closure Reason');
+  assert.deepEqual(
+    modal.components.map((row) => {
+      const input = row.components[0];
+      return {
+        customId: input.custom_id,
+        label: input.label,
+        style: input.style,
+        required: input.required,
+        maxLength: input.max_length,
+      };
+    }),
+    [{
+      customId: 'ticket-close-reason',
+      label: 'Why are you closing this ticket?',
+      style: 2,
+      required: true,
+      maxLength: 1000,
+    }],
+  );
 });
 
 test('ticket access includes configured ticket, admin, and owner roles', () => {
@@ -666,6 +692,7 @@ test('ticket transcript embed shows the closure details in the requested layout'
     ownerId: 'ticket-owner',
     closedById: 'staff-1',
     claimedById: 'staff-1',
+    reason: 'Customer request',
   }).toJSON();
 
   assert.equal(embed.title, 'Ticket Closed');
@@ -678,7 +705,7 @@ test('ticket transcript embed shows the closure details in the requested layout'
       ['🔒 Closed By', '<@staff-1>', true],
       ['🕒 Open Time', '<t:1791103620:f>', true],
       ['🟣 Claimed By', '<@staff-1>', true],
-      ['❔ Reason', 'done', true],
+      ['❔ Reason', 'Customer request', true],
     ],
   );
 });

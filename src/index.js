@@ -30,6 +30,7 @@ const {
   ticketButtons,
   ticketCloseConfirmationEmbed,
   ticketCloseConfirmationButtons,
+  ticketCloseReasonModal,
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
@@ -211,8 +212,48 @@ async function handleTicketCloseConfirmation(interaction) {
       });
     }
   }
+  return interaction.showModal(ticketCloseReasonModal(confirmationId));
+}
+
+async function handleTicketCloseReasonModal(interaction) {
+  const confirmationId = interaction.customId.slice('ticket-close-reason:'.length);
+  const confirmation = pendingTicketClosures.get(confirmationId);
+  if (!confirmation
+    || confirmation.guildId !== interaction.guildId
+    || confirmation.userId !== interaction.user.id
+    || confirmation.channelId !== interaction.channelId) {
+    return interaction.reply({
+      content: 'This ticket-close request is no longer available. Please start the close process again.',
+      ephemeral: true,
+    });
+  }
+
+  const channel = interaction.channel;
+  const ownerId = ticketOwnerId(channel);
+  if (!channel || !ownerId || ownerId !== confirmation.ownerId) {
+    discardTicketClosure(confirmationId);
+    return interaction.reply({ content: 'This ticket is no longer active.', ephemeral: true });
+  }
+  if (confirmation.source === 'customer' && interaction.user.id !== ownerId) {
+    return interaction.reply({ content: 'Only the ticket creator can close this ticket.', ephemeral: true });
+  }
+  if (confirmation.source === 'staff') {
+    const settings = store.getSettings(interaction.guildId);
+    if (!hasTicketManagerRole(settings, (roleId) => memberHasRole(interaction, roleId))) {
+      discardTicketClosure(confirmationId);
+      return interaction.reply({
+        content: 'Your permission to close this ticket has changed. The ticket remains open.',
+        ephemeral: true,
+      });
+    }
+  }
+
+  const reason = interaction.fields.getTextInputValue('ticket-close-reason').trim();
+  if (!reason) {
+    return interaction.reply({ content: 'Please enter a reason before closing the ticket.', ephemeral: true });
+  }
   discardTicketClosure(confirmationId);
-  return closeTicketChannel(interaction, channel, ownerId);
+  return closeTicketChannel(interaction, channel, ownerId, reason);
 }
 
 function scheduleVoidCheckForOrder(order) {
@@ -341,7 +382,7 @@ async function requestTicketClosure(interaction, channel, ownerId, source) {
   });
 }
 
-async function closeTicketChannel(interaction, channel, ownerId) {
+async function closeTicketChannel(interaction, channel, ownerId, reason) {
   const settings = store.getSettings(interaction.guildId);
   if (!settings?.ticketTranscriptChannelId) {
     return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
@@ -360,6 +401,7 @@ async function closeTicketChannel(interaction, channel, ownerId) {
     ownerId,
     closedById: interaction.user.id,
     claimedById: claimedMatch?.[1],
+    reason,
   });
   const transcriptFile = {
     attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
@@ -1174,6 +1216,9 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('payment:')) await handlePaymentButton(interaction);
+    else if (interaction.isModalSubmit() && interaction.customId.startsWith('ticket-close-reason:')) {
+      await handleTicketCloseReasonModal(interaction);
+    }
     else if (interaction.isModalSubmit() && [
       'ticket:order-form',
       'ticket:report-form',
