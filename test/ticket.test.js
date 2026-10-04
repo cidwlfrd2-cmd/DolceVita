@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { MessageFlags } = require('discord.js');
 const {
   orderTicketModal,
   ticketPanelButtons,
@@ -13,6 +14,7 @@ const {
   ticketCloseReasonModal,
   helpEmbed,
   multiplicationEmbed,
+  multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
   vouchPreviewButtons,
@@ -468,10 +470,16 @@ test('multiplication handles finite numbers and rejects invalid values or overfl
   assert.equal(multiplyExpression('5*x'), null);
 });
 
-test('multiplication result is formatted as an embed', () => {
+test('multiplication result is formatted as an embed for slash commands', () => {
   const embed = multiplicationEmbed(multiplyExpression('5*5')).toJSON();
   assert.equal(embed.title, undefined);
   assert.equal(embed.description, '**5 x 5 = 25**');
+});
+
+test('multiplication result is formatted as a V2 container for ,calc', () => {
+  const container = multiplicationContainer(multiplyExpression('5*5')).toJSON();
+  assert.equal(container.type, 17);
+  assert.equal(container.components[0].content, '**5 x 5 = 25**');
 });
 
 test('payment reminder embed has the requested description, no title, and server icon thumbnail', () => {
@@ -602,8 +610,11 @@ test('calc shortcut replies with the result before deleting the command message'
     reply: async (payload) => calls.push(['reply', payload]),
     delete: async () => calls.push(['delete']),
   };
-  const resultEmbed = multiplicationEmbed(multiplyAmounts('2', '3'));
-  const reply = { embeds: [resultEmbed], allowedMentions: { parse: [] } };
+  const reply = {
+    components: [multiplicationContainer(multiplyAmounts('2', '3'))],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  };
   const deleteError = await replyThenDeleteCommand(message, reply);
   assert.equal(deleteError, null);
   assert.deepEqual(calls, [

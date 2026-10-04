@@ -18,6 +18,7 @@ const {
   orderCompletionReminderContainer,
   orderVouchModal,
   multiplicationEmbed,
+  multiplicationContainer,
   vouchEmbed,
   vouchPreviewButtons,
   voidedOrderEmbed,
@@ -1373,7 +1374,8 @@ client.on('messageCreate', async (message) => {
       const deleteError = await replyThenDeleteCommand(
         message,
         {
-          embeds: [multiplicationEmbed(result)],
+          components: [multiplicationContainer(result)],
+          flags: MessageFlags.IsComponentsV2,
           allowedMentions: { parse: [] },
         },
       );

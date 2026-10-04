@@ -32,11 +32,11 @@ function orderContainer(order) {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
       ` _ _    🧁   order from ${sourceChannel}`,
-      `  _ _     ༄   ${order.items ?? order.item}`,
-      `   _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
-      `    _ _     ༄   status: __**${status}**__`,
-      `    -# _ _       🍬   served by ${servedBy}`,
-      '_ _',
+      `  _ _     ⤷   ${order.items ?? order.item}`,
+      `   _ _     ⤷   paid via ${order.paymentMethod ?? 'Not specified'}`,
+      `    _ _     ⤷   status: __**${status}**__`,
+      `     _ _     ⤷   served by ${servedBy}`,
+      '     _ _',
     ].join('\n')))
     .addActionRowComponents(orderButtons(order));
 }
@@ -84,6 +84,13 @@ function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
     .setDescription(`**${amountOne} x ${amountTwo} = ${product}**`);
+}
+
+function multiplicationContainer({ amountOne, amountTwo, product }) {
+  return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
+    .addTextDisplayComponents(new TextDisplayBuilder()
+      .setContent(`**${amountOne} x ${amountTwo} = ${product}**`));
 }
 
 function paymentReminderEmbed(serverIconUrl) {
@@ -511,6 +518,7 @@ module.exports = {
   orderVouchButton,
   orderVouchModal,
   multiplicationEmbed,
+  multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
   paymentDetailsEmbed,
