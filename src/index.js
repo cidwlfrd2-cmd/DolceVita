@@ -34,11 +34,19 @@ const {
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
+  orderTicketTermsEmbed,
+  orderTicketTermsButton,
 } = require('./embeds');
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
-const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('./ticket-context');
+const {
+  ticketOwnerId,
+  ticketTermsRequired,
+  ticketTermsAccepted,
+  ticketCustomerId,
+  ticketProduct,
+} = require('./ticket-context');
 const { orderReference } = require('./order-reference');
 const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
 const {
@@ -46,6 +54,8 @@ const {
   ticketManagerRoleIds,
   hasTicketManagerRole,
   ticketManagerMentionPayload,
+  ticketOwnerPermissionOverwrite,
+  ticketAccessRolePermissionOverwrite,
 } = require('./ticket-permissions');
 const { parseTicketMessageCommand } = require('./ticket-message-commands');
 const { parseOrderTicketForm } = require('./order-ticket-form');
@@ -529,16 +539,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
         id: guild.roles.everyone.id,
         deny: [PermissionFlagsBits.ViewChannel],
       },
-      {
-        id: interaction.user.id,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-          PermissionFlagsBits.AttachFiles,
-          PermissionFlagsBits.EmbedLinks,
-        ],
-      },
+      ticketOwnerPermissionOverwrite(interaction.user.id, type),
       {
         id: client.user.id,
         allow: [
@@ -551,14 +552,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       },
     ];
     for (const roleId of ticketRoleIds) {
-      permissionOverwrites.push({
-        id: roleId,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      });
+      permissionOverwrites.push(ticketAccessRolePermissionOverwrite(roleId, type));
     }
     let parent;
     const categorySettingKey = {
@@ -582,14 +576,19 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       ),
       type: ChannelType.GuildText,
       ...(parent ? { parent: parent.id } : {}),
-      topic: `ticket-owner:${interaction.user.id};ticket-type:${type}${orderForm ? `;ticket-product:${orderForm.product}` : ''}`,
+      topic: `ticket-owner:${interaction.user.id};ticket-type:${type}${type === 'order' ? ';ticket-terms-required' : ''}${orderForm ? `;ticket-product:${orderForm.product}` : ''}`,
       permissionOverwrites,
       reason: `${type} ticket opened by ${interaction.user.tag}`,
     });
     await channel.send({
       ...ticketManagerMentionPayload(settings),
-      embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
-      components: [ticketButtons()],
+      embeds: [
+        ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm),
+        ...(type === 'order' ? [orderTicketTermsEmbed()] : []),
+      ],
+      components: type === 'order'
+        ? [orderTicketTermsButton(), ticketButtons()]
+        : [ticketButtons()],
     });
     return { channel, created: true };
   });
@@ -960,6 +959,45 @@ async function handleCommand(interaction) {
 }
 
 async function handleTicketButton(interaction) {
+  if (interaction.customId === 'ticket:terms-agree') {
+    const channel = interaction.channel;
+    const ownerId = ticketOwnerId(channel);
+    if (!channel || !ownerId || ownerId !== interaction.user.id || !ticketTermsRequired(channel)) {
+      return interaction.reply({ content: 'Only the owner of this order ticket can accept its terms.', ephemeral: true });
+    }
+    if (ticketTermsAccepted(channel)) {
+      return interaction.reply({ content: 'You have already accepted these terms.', ephemeral: true });
+    }
+
+    await interaction.deferUpdate();
+    await channel.permissionOverwrites.edit(ownerId, {
+      ViewChannel: true,
+      SendMessages: true,
+      SendMessagesInThreads: true,
+      ReadMessageHistory: true,
+      AttachFiles: true,
+      EmbedLinks: true,
+    });
+    const settings = store.getSettings(interaction.guildId);
+    for (const roleId of ticketAccessRoleIds(settings)) {
+      await channel.permissionOverwrites.edit(roleId, {
+        ViewChannel: true,
+        SendMessages: true,
+        SendMessagesInThreads: true,
+        ReadMessageHistory: true,
+      });
+    }
+    await channel.setTopic(`${channel.topic};ticket-terms-accepted`);
+    await interaction.message.edit({
+      components: [ticketButtons()],
+      allowedMentions: { parse: [] },
+    });
+    return interaction.followUp({
+      content: 'You agreed to the terms. You can now send messages in this ticket.',
+      ephemeral: true,
+    });
+  }
+
   if (interaction.customId === 'ticket:order') {
     return interaction.showModal(orderTicketModal());
   }
@@ -974,6 +1012,9 @@ async function handleTicketButton(interaction) {
     const ownerMatch = channel?.topic?.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/);
     if (!channel || !ownerMatch) {
       return interaction.reply({ content: 'This channel is not an active ticket.', ephemeral: true });
+    }
+    if (ticketTermsRequired(channel) && !ticketTermsAccepted(channel)) {
+      return interaction.reply({ content: 'The ticket owner must accept the terms before this ticket can be claimed.', ephemeral: true });
     }
     const settings = store.getSettings(interaction.guildId);
     const ticketRoleIds = ticketAccessRoleIds(settings);

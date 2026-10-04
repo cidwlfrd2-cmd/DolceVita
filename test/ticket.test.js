@@ -19,10 +19,18 @@ const {
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderCompletionReminderEmbed,
+  orderTicketTermsEmbed,
+  orderTicketTermsButton,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
-const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('../src/ticket-context');
+const {
+  ticketOwnerId,
+  ticketTermsRequired,
+  ticketTermsAccepted,
+  ticketCustomerId,
+  ticketProduct,
+} = require('../src/ticket-context');
 const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
@@ -167,6 +175,19 @@ test('order ticket embed includes the submitted form answers', () => {
   );
 });
 
+test('order ticket terms are shown with an agreement button on the same message', () => {
+  assert.deepEqual(orderTicketTermsEmbed().toJSON().description.split('\n'), [
+    "🧁 𔘓 ֹ **dolce vita's terms of service** 𓂅 ̼",
+    'all sweeties bought are final and non-refundable.',
+    '◞◟　𓎟𓎟　 ✦　　𓎟𓎟　　◞◟　𓎟𓎟',
+    '» Force refunds are not accepted.',
+    '» No cancellation or requesting refunds when order status is processing.',
+  ]);
+  const button = orderTicketTermsButton().toJSON().components[0];
+  assert.equal(button.custom_id, 'ticket:terms-agree');
+  assert.equal(button.label, 'I agree to the terms');
+});
+
 test('report ticket embed includes all submitted report form answers', () => {
   const embed = ticketEmbed('report', { id: 'user-1' }, undefined, {
     product: 'Latte',
@@ -303,6 +324,17 @@ test('ticket owner lookup only recognizes active ticket topics', () => {
   assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678' }), null);
   assert.equal(ticketOwnerId({ topic: 'ticket-owner:123456789012345678;ticket-type:unknown' }), null);
   assert.equal(ticketOwnerId(null), null);
+});
+
+test('ticket terms state is recorded in the order ticket topic', () => {
+  const required = { topic: 'ticket-owner:123;ticket-type:order;ticket-terms-required' };
+  const accepted = { topic: `${required.topic};ticket-terms-accepted` };
+
+  assert.equal(ticketTermsRequired(required), true);
+  assert.equal(ticketTermsAccepted(required), false);
+  assert.equal(ticketTermsRequired(accepted), true);
+  assert.equal(ticketTermsAccepted(accepted), true);
+  assert.equal(ticketTermsRequired({ topic: 'ticket-owner:123;ticket-type:report' }), false);
 });
 
 test('orders in tickets use the ticket owner as the customer', () => {

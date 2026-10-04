@@ -3,6 +3,14 @@ function ticketOwnerId(channel) {
   return channel.topic.match(/(?:^|;)ticket-owner:(\d+)(?:;|$)/)?.[1] ?? null;
 }
 
+function ticketTermsRequired(channel) {
+  return Boolean(channel?.topic?.match(/(?:^|;)ticket-terms-required(?:;|$)/));
+}
+
+function ticketTermsAccepted(channel) {
+  return Boolean(channel?.topic?.match(/(?:^|;)ticket-terms-accepted(?:;|$)/));
+}
+
 function ticketCustomerId(channel, fallbackUserId) {
   return ticketOwnerId(channel) ?? fallbackUserId;
 }
@@ -21,4 +29,10 @@ async function ticketProduct(channel) {
   return null;
 }
 
-module.exports = { ticketOwnerId, ticketCustomerId, ticketProduct };
+module.exports = {
+  ticketOwnerId,
+  ticketTermsRequired,
+  ticketTermsAccepted,
+  ticketCustomerId,
+  ticketProduct,
+};

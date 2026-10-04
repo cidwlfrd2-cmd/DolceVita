@@ -362,6 +362,27 @@ function ticketEmbed(type, user, orderForm, reportForm, othersForm) {
   return embed;
 }
 
+function orderTicketTermsEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x3478c7)
+    .setDescription([
+      "🧁 𔘓 ֹ **dolce vita's terms of service** 𓂅 ̼",
+      'all sweeties bought are final and non-refundable.',
+      '◞◟　𓎟𓎟　 ✦　　𓎟𓎟　　◞◟　𓎟𓎟',
+      '» Force refunds are not accepted.',
+      '» No cancellation or requesting refunds when order status is processing.',
+    ].join('\n'));
+}
+
+function orderTicketTermsButton() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket:terms-agree')
+      .setLabel('I agree to the terms')
+      .setStyle(ButtonStyle.Success),
+  );
+}
+
 function ticketButtons(claimed = false) {
   const buttons = [
     new ButtonBuilder()
@@ -466,4 +487,6 @@ module.exports = {
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
+  orderTicketTermsEmbed,
+  orderTicketTermsButton,
 };
