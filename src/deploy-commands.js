@@ -1,11 +1,22 @@
-require('dotenv').config();
+// Load a local .env file if present. On Railway, variables are injected into
+// process.env by the platform and no .env file exists; dotenv does not override
+// variables that are already set.
+try {
+  require('dotenv').config();
+} catch (error) {
+  // dotenv is optional when variables come from the platform environment.
+}
 
 const { REST, Routes } = require('discord.js');
 const commands = require('./commands');
 
 const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
-if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
-  throw new Error('Set DISCORD_TOKEN and DISCORD_CLIENT_ID in your .env file.');
+const missing = ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID'].filter((name) => !process.env[name]);
+if (missing.length > 0) {
+  throw new Error(
+    `Missing required environment variable(s): ${missing.join(', ')}. ` +
+    'Set them in your Railway service variables or in a local .env file.'
+  );
 }
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
