@@ -19,8 +19,7 @@ const {
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderCompletionReminderEmbed,
-  orderTicketTermsEmbed,
-  orderTicketTermsButton,
+  orderTicketTermsContainer,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
@@ -175,17 +174,24 @@ test('order ticket embed includes the submitted form answers', () => {
   );
 });
 
-test('order ticket terms are shown with an agreement button on the same message', () => {
-  assert.deepEqual(orderTicketTermsEmbed().toJSON().description.split('\n'), [
-    "🧁 𔘓 ֹ **dolce vita's terms of service** 𓂅 ̼",
+test('order ticket terms are shown in a V2 container with the agreement button inside', () => {
+  const container = orderTicketTermsContainer().toJSON();
+  assert.equal(container.type, 17);
+  assert.deepEqual(container.components[0].content.split('\n'), [
+    "🧁  ֹ **dolce vita's terms of service** 𓂅 ̼",
     'all sweeties bought are final and non-refundable.',
-    '◞◟　𓎟𓎟　 ✦　　𓎟𓎟　　◞◟　𓎟𓎟',
+    '────୨ৎ────────୨ৎ────────୨ৎ────────୨ৎ───────',
     '» Force refunds are not accepted.',
     '» No cancellation or requesting refunds when order status is processing.',
   ]);
-  const button = orderTicketTermsButton().toJSON().components[0];
+  assert.equal(container.components[1].type, 1);
+  const button = container.components[1].components[0];
   assert.equal(button.custom_id, 'ticket:terms-agree');
   assert.equal(button.label, 'I agree to the terms');
+
+  const acceptedButton = orderTicketTermsContainer(true).toJSON().components[1].components[0];
+  assert.equal(acceptedButton.label, 'Terms accepted');
+  assert.equal(acceptedButton.disabled, true);
 });
 
 test('report ticket embed includes all submitted report form answers', () => {
@@ -515,25 +521,6 @@ test('completed order reminder embed has no title and the warranty policy descri
   ].join('\n'));
 });
 
-test('message command parser recognizes the voided channel and role shortcuts', () => {
-  assert.deepEqual(parseTicketMessageCommand(',setorder 123456789012345678'), {
-    name: 'setorder',
-    args: ['123456789012345678'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',setvoided 1234567890'), {
-    name: 'set_voided',
-    args: ['1234567890'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',setvoidedrole 9876543210'), {
-    name: 'set_role_voided',
-    args: ['9876543210'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',setrolevoided 9876543210'), {
-    name: 'set_role_voided',
-    args: ['9876543210'],
-  });
-});
-
 test('voided order embed includes the required title, issue details, and footer', () => {
   const date = new Date('2026-10-03T12:34:56Z');
   const embed = voidedOrderEmbed({
@@ -601,10 +588,10 @@ test('calc shortcut reports command deletion errors to its caller', async () => 
   assert.equal(await replyThenDeleteCommand(message, 'result'), deleteError);
 });
 
-test('ticketsetup shortcut is registered as an administrator command', () => {
-  const shortcut = commands.find((command) => command.name === 'ticketsetup');
-  assert.ok(shortcut);
-  assert.equal(shortcut.default_member_permissions, '8');
+test('/ticketsetup is registered as an administrator command', () => {
+  const command = commands.find((entry) => entry.name === 'ticketsetup');
+  assert.ok(command);
+  assert.equal(command.default_member_permissions, '8');
 });
 
 test('ticket category setup slash command takes a category ID and requires administrator permission', () => {
@@ -627,46 +614,26 @@ test('per-ticket category slash commands require an admin and category ID', () =
   }
 });
 
-test('ticket message command parser recognizes category and transcript setup aliases', () => {
-  assert.deepEqual(parseTicketMessageCommand(',setupticketcategory 123456789012345678'), {
-    name: 'setupticketcategory',
-    args: ['123456789012345678'],
-  });
-  assert.deepEqual(parseTicketMessageCommand(',set ticket_transcript 123456789012345678'), {
-    name: 'set_ticket_transcript',
-    args: ['123456789012345678'],
-  });
-  assert.equal(parseTicketMessageCommand(',set something-else 123'), null);
-});
-
-test('ticket message parser recognizes per-ticket category shortcuts', () => {
-  for (const name of ['ordercategory', 'reportcategory', 'othercategory']) {
-    assert.deepEqual(parseTicketMessageCommand(`,${name} 123456789012345678`), {
-      name,
-      args: ['123456789012345678'],
-    });
+test('calc is the only supported comma message command', () => {
+  for (const command of [
+    ',help',
+    ',ticketsetup',
+    ',payment',
+    ',setorder 123456789012345678',
+    ',setvoided 1234567890',
+    ',setvoidedrole 9876543210',
+    ',setrolevoided 9876543210',
+    ',setupticketcategory 123456789012345678',
+    ',set ticket_transcript 123456789012345678',
+    ',ordercategory 123456789012345678',
+    ',reportcategory 123456789012345678',
+    ',othercategory 123456789012345678',
+  ]) {
+    assert.equal(parseTicketMessageCommand(command), null, `${command} should not be recognized`);
   }
 });
 
-test('ticket message command parser recognizes payment reminder shortcut without arguments', () => {
-  assert.deepEqual(parseTicketMessageCommand(',payment'), {
-    name: 'payment',
-    args: [],
-  });
-  assert.equal(parseTicketMessageCommand(',payment extra'), null);
-});
-
-test('bot pronouns shortcut is not registered', () => {
-  assert.equal(parseTicketMessageCommand(',botpronouns'), null);
-  assert.equal(parseTicketMessageCommand(',pronouns'), null);
-});
-
-test('removed ticket role setup message commands are not recognized', () => {
-  assert.equal(parseTicketMessageCommand(',ticket setup staff_role 123456789012345678'), null);
-  assert.equal(parseTicketMessageCommand(',ticket setup ownersv_role 123456789012345678'), null);
-});
-
-test('help command lists registered commands, subcommands, and message shortcuts', () => {
+test('help command lists slash commands and the remaining message command', () => {
   const embed = helpEmbed(commands).toJSON();
   assert.equal(commands.find((command) => command.name === 'help')?.description, 'List all bot commands.');
   for (const commandText of [
@@ -682,27 +649,21 @@ test('help command lists registered commands, subcommands, and message shortcuts
     '/ticketsetup',
     '/stickymessage set',
     '/stickymessage remove',
-    ',ticketsetup',
-    ',help',
     '/setupticketcategory',
-    ',setupticketcategory',
     '/ordercategory',
     '/reportcategory',
     '/othercategory',
-    ',ordercategory <channel_id>',
-    ',reportcategory <channel_id>',
-    ',othercategory <channel_id>',
-    ',setorder <channel_id>',
-    ',set ticket_transcript',
-    ',setvoided <channel id>',
-    ',setvoidedrole <role_id>',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
   assert.match(embed.description, /unclaimed only by the current claimant/);
   assert.match(embed.description, /automatically delete the ticket channel/);
-  assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message shortcuts'));
-  assert.ok(embed.description.indexOf('## Message shortcuts') < embed.description.indexOf('## Ticket notes'));
+  assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message commands'));
+  assert.ok(embed.description.indexOf('## Message commands') < embed.description.indexOf('## Ticket notes'));
+  assert.equal(
+    embed.description.split('## Message commands\n')[1].split('\n\n## Ticket notes')[0],
+    '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
+  );
   assert.ok(embed.description.length <= 4096);
 });
 

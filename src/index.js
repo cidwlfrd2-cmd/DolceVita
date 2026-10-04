@@ -5,6 +5,7 @@ const {
   Client,
   EmbedBuilder,
   GatewayIntentBits,
+  MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
 const { randomUUID } = require('node:crypto');
@@ -12,16 +13,14 @@ const path = require('node:path');
 const { OrderStore } = require('./store');
 const {
   orderButtons,
-  orderEmbed,
+  orderContainer,
   orderStatusEmbed,
   orderCompletionReminderEmbed,
   multiplicationEmbed,
-  paymentReminderEmbed,
   vouchEmbed,
   vouchPreviewButtons,
   voidedOrderEmbed,
   paymentDetailsEmbed,
-  paymentReminderButtons,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
@@ -34,8 +33,7 @@ const {
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
-  orderTicketTermsEmbed,
-  orderTicketTermsButton,
+  orderTicketTermsContainer,
 } = require('./embeds');
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
@@ -462,8 +460,8 @@ async function refreshOrderMessage(order) {
   const channel = await client.channels.fetch(order.channelId);
   const message = await channel.messages.fetch(order.messageId);
   await message.edit({
-    embeds: [orderEmbed(order)],
-    components: [orderButtons(order)],
+    components: [orderContainer(order)],
+    flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   });
 }
@@ -582,14 +580,17 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
     });
     await channel.send({
       ...ticketManagerMentionPayload(settings),
-      embeds: [
-        ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm),
-        ...(type === 'order' ? [orderTicketTermsEmbed()] : []),
-      ],
-      components: type === 'order'
-        ? [orderTicketTermsButton(), ticketButtons()]
-        : [ticketButtons()],
+      embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
+      components: [ticketButtons()],
+      allowedMentions: { parse: [] },
     });
+    if (type === 'order') {
+      await channel.send({
+        components: [orderTicketTermsContainer()],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
+    }
     return { channel, created: true };
   });
 }
@@ -759,8 +760,8 @@ async function handleCommand(interaction) {
     });
     const channel = await client.channels.fetch(orderChannelId);
     const message = await channel.send({
-      embeds: [orderEmbed(order)],
-      components: [orderButtons(order)],
+      components: [orderContainer(order)],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
     store.setOrderMessage(order.id, channel.id, message.id);
@@ -989,7 +990,8 @@ async function handleTicketButton(interaction) {
     }
     await channel.setTopic(`${channel.topic};ticket-terms-accepted`);
     await interaction.message.edit({
-      components: [ticketButtons()],
+      components: [orderTicketTermsContainer(true)],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
     return interaction.followUp({
@@ -1168,8 +1170,8 @@ async function handleButton(interaction) {
     return interaction.reply({ content: 'This order is no longer active.', ephemeral: true });
   }
   await interaction.update({
-    embeds: [orderEmbed(order)],
-    components: [orderButtons(order)],
+    components: [orderContainer(order)],
+    flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   });
   const statusEmbed = orderStatusEmbed(order);
@@ -1281,30 +1283,6 @@ client.on('messageCreate', async (message) => {
     ? parseTicketMessageCommand(message.content)
     : null;
   try {
-    if (messageCommand?.name === 'help') {
-      await message.channel.send({
-        embeds: [helpEmbed(commands)],
-        allowedMentions: { parse: [] },
-      });
-      return;
-    }
-    if (messageCommand?.name === 'payment') {
-      const ownerId = ticketOwnerId(message.channel);
-      if (!ownerId) {
-        await message.reply('`,payment` can only be used inside an active ticket.');
-        return;
-      }
-      if (ownerId !== message.author.id) {
-        await message.reply('Only the ticket creator can use `,payment` in this ticket.');
-        return;
-      }
-      await message.channel.send({
-        embeds: [paymentReminderEmbed(message.guild.iconURL())],
-        components: [paymentReminderButtons()],
-        allowedMentions: { parse: [] },
-      });
-      return;
-    }
     if (messageCommand?.name === 'calc') {
       const result = messageCommand.args.length
         ? multiplyExpression(messageCommand.args.join(' '))
@@ -1323,139 +1301,6 @@ client.on('messageCreate', async (message) => {
       if (deleteError) {
         console.error(`Could not delete calc command message ${message.id}:`, deleteError);
         await message.channel.send('I solved the calculation, but could not delete your command. Please check that I have the Manage Messages permission.');
-      }
-      return;
-    }
-    if (messageCommand?.name === 'ticketsetup') {
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can post the ticket panel.');
-      } else {
-        await postTicketPanel(message.channel);
-      }
-      return;
-    }
-    if (messageCommand?.name === 'set_voided') {
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can configure the voided channel.');
-        return;
-      }
-      if (messageCommand.args.length !== 1) {
-        await message.reply('Usage: `,setvoided <channel id>`');
-        return;
-      }
-      let channel;
-      try {
-        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
-      } catch (error) {
-        await message.reply(error.message);
-        return;
-      }
-      if (!channel.isTextBased() || typeof channel.send !== 'function') {
-        await message.reply('That ID is not a sendable text channel in this server.');
-        return;
-      }
-      store.setSettings(message.guild.id, { voidedChannelId: channel.id });
-      await message.reply(`Voided-order alerts will be posted in ${channel}.`);
-      return;
-    }
-    if (messageCommand?.name === 'setorder') {
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can set the order channel.');
-        return;
-      }
-      if (messageCommand.args.length !== 1) {
-        await message.reply('Usage: `,setorder <channel_id>`');
-        return;
-      }
-      let channel;
-      try {
-        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
-      } catch (error) {
-        await message.reply(error.message);
-        return;
-      }
-      if (!channel.isTextBased() || typeof channel.send !== 'function') {
-        await message.reply('That ID is not a sendable text channel in this server.');
-        return;
-      }
-      store.setSettings(message.guild.id, { orderChannelId: channel.id });
-      await message.reply(`New orders will be posted in ${channel}.`);
-      return;
-    }
-    if (messageCommand?.name === 'set_role_voided') {
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can configure the voided role.');
-        return;
-      }
-      if (messageCommand.args.length !== 1) {
-        await message.reply('Usage: `,setvoidedrole <role_id>`');
-        return;
-      }
-      const role = message.guild.roles.cache.get(messageCommand.args[0]) ?? await message.guild.roles.fetch(messageCommand.args[0]).catch(() => null);
-      if (!role) {
-        await message.reply('That ID is not a role in this server.');
-        return;
-      }
-      store.setSettings(message.guild.id, { voidedRoleId: role.id });
-      await message.reply(`${role} will be granted to members marked as voided.`);
-      return;
-    }
-    const ticketCategoryShortcuts = {
-      ordercategory: ['ticketOrderCategoryId', 'order'],
-      reportcategory: ['ticketReportCategoryId', 'report'],
-      othercategory: ['ticketOthersCategoryId', 'other'],
-    };
-    if (messageCommand?.name === 'setupticketcategory'
-      || messageCommand?.name === 'set_ticket_transcript'
-      || ticketCategoryShortcuts[messageCommand?.name]) {
-      if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply('Only server administrators can configure ticket channels.');
-        return;
-      }
-      if (messageCommand.args.length !== 1) {
-        const shortcutLabels = {
-          ordercategory: 'ordercategory',
-          reportcategory: 'reportcategory',
-          othercategory: 'othercategory',
-        };
-        const usage = ticketCategoryShortcuts[messageCommand.name]
-          ? `Usage: \`,${shortcutLabels[messageCommand.name]} <category_id>\``
-          : messageCommand.name === 'setupticketcategory'
-            ? 'Usage: `,setupticketcategory <category id>`'
-            : 'Usage: `,set ticket_transcript <channel id>`';
-        await message.reply(usage);
-        return;
-      }
-
-      let channel;
-      try {
-        channel = await fetchGuildChannelById(message.guild, messageCommand.args[0]);
-      } catch (error) {
-        await message.reply(error.message);
-        return;
-      }
-      if (messageCommand.name === 'setupticketcategory') {
-        if (channel.type !== ChannelType.GuildCategory) {
-          await message.reply('That ID is not a category in this server.');
-          return;
-        }
-        store.setSettings(message.guild.id, { ticketCategoryId: channel.id });
-        await message.reply(`New ticket channels will be created in **${channel.name}**.`);
-      } else if (ticketCategoryShortcuts[messageCommand.name]) {
-        if (channel.type !== ChannelType.GuildCategory) {
-          await message.reply('That ID is not a category in this server.');
-          return;
-        }
-        const [settingKey, label] = ticketCategoryShortcuts[messageCommand.name];
-        store.setSettings(message.guild.id, { [settingKey]: channel.id });
-        await message.reply(`New ${label} tickets will be created in **${channel.name}**.`);
-      } else {
-        if (!channel.isTextBased() || typeof channel.send !== 'function') {
-          await message.reply('That ID is not a sendable text channel in this server.');
-          return;
-        }
-        store.setSettings(message.guild.id, { ticketTranscriptChannelId: channel.id });
-        await message.reply(`Closed ticket transcripts will be posted in ${channel}.`);
       }
       return;
     }

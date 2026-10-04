@@ -2,8 +2,10 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   EmbedBuilder,
   ModalBuilder,
+  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
@@ -13,7 +15,7 @@ const { orderReference } = require('./order-reference');
 const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
 
-function orderEmbed(order) {
+function orderContainer(order) {
   const status = order.status === 'completed'
     ? 'done'
     : order.status === 'cancelled'
@@ -23,20 +25,19 @@ function orderEmbed(order) {
           : order.processingStatus === 'processing' ? 'processing' : 'noted';
   const sourceChannel = order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
-  const embed = new EmbedBuilder()
-    .setColor(COLORS[order.status])
-    .setDescription([
+  return new ContainerBuilder()
+    .setAccentColor(COLORS[order.status])
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
-      ` _ _    🧁order from ${sourceChannel}`,
-      ` _ _     ༄   ${order.items ?? order.item}`,
-      ` _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
-      ` _ _     ༄   status: __**${status}**__`,
-      `-# _ _       served by ${servedBy}`,
+      ` _ _    🧁   order from ${sourceChannel}`,
+      `  _ _     ༄   ${order.items ?? order.item}`,
+      `   _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
+      `    _ _     ༄   status: __**${status}**__`,
+      `    -# _ _       🍬    served by : ${servedBy}`,
+      `-# Submitted <t:${Math.floor(new Date(order.createdAt).getTime() / 1000)}:f>`,
       '_ _',
-    ].join('\n'));
-
-  embed.setTimestamp(new Date(order.createdAt));
-  return embed;
+    ].join('\n')))
+    .addActionRowComponents(orderButtons(order));
 }
 
 function orderStatusEmbed(order) {
@@ -212,19 +213,8 @@ function helpEmbed(commands) {
     )) ?? [];
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
-  lines.push('', '## Message shortcuts');
-  lines.push('**,ticketsetup** — Post the ticket panel in this channel (administrator only).');
-  lines.push('**,payment** — Show the Dolce Vita payment reminders.');
+  lines.push('', '## Message commands');
   lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
-  lines.push('**,ordercategory <channel_id>** — Set the category for new order tickets (administrator only).');
-  lines.push('**,reportcategory <channel_id>** — Set the category for new report tickets (administrator only).');
-  lines.push('**,othercategory <channel_id>** — Set the category for new other tickets (administrator only).');
-  lines.push('**,setupticketcategory <category_id>** — Set the fallback category for all ticket types (administrator only).');
-  lines.push('**,setorder <channel_id>** — Set the channel for new orders (administrator only).');
-  lines.push('**,set ticket_transcript <channel id>** — Set the closed-ticket transcript channel (administrator only).');
-  lines.push('**,setvoided <channel id>** — Set the voided-order alert channel (administrator only).');
-  lines.push('**,setvoidedrole <role_id>** — Set the role granted to members marked as voided (administrator only).');
-  lines.push('**,help** — Show this command list.');
   lines.push('', '## Ticket notes');
   lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
   lines.push('Ticket close actions require a reason, post it in the transcript, then automatically delete the ticket channel.');
@@ -362,25 +352,22 @@ function ticketEmbed(type, user, orderForm, reportForm, othersForm) {
   return embed;
 }
 
-function orderTicketTermsEmbed() {
-  return new EmbedBuilder()
-    .setColor(0x3478c7)
-    .setDescription([
-      "🧁 𔘓 ֹ **dolce vita's terms of service** 𓂅 ̼",
+function orderTicketTermsContainer(accepted = false) {
+  const button = new ButtonBuilder()
+    .setCustomId('ticket:terms-agree')
+    .setLabel(accepted ? 'Terms accepted' : 'I agree to the terms')
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(accepted);
+  return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      "🧁  ֹ **dolce vita's terms of service** 𓂅 ̼",
       'all sweeties bought are final and non-refundable.',
-      '◞◟　𓎟𓎟　 ✦　　𓎟𓎟　　◞◟　𓎟𓎟',
+      '────୨ৎ────────୨ৎ────────୨ৎ────────୨ৎ───────',
       '» Force refunds are not accepted.',
       '» No cancellation or requesting refunds when order status is processing.',
-    ].join('\n'));
-}
-
-function orderTicketTermsButton() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket:terms-agree')
-      .setLabel('I agree to the terms')
-      .setStyle(ButtonStyle.Success),
-  );
+    ].join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(button));
 }
 
 function ticketButtons(claimed = false) {
@@ -465,7 +452,7 @@ function ticketTranscriptEmbed({
 
 module.exports = {
   orderButtons,
-  orderEmbed,
+  orderContainer,
   orderStatusEmbed,
   voidedOrderEmbed,
   orderCompletionReminderEmbed,
@@ -487,6 +474,5 @@ module.exports = {
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
-  orderTicketTermsEmbed,
-  orderTicketTermsButton,
+  orderTicketTermsContainer,
 };
