@@ -1,4 +1,4 @@
-# Dolce Vita Order Bot
+# DolceVita Order Bot
 
 A Discord bot for submitting orders, showing a public queue, and letting staff claim and close orders.
 
