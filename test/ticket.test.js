@@ -450,7 +450,7 @@ test('payment reminder embed supports servers without a custom icon', () => {
   assert.equal(embed.thumbnail, undefined);
 });
 
-test('vouch embed matches the warranty notice and order-details layout', () => {
+test('vouch embed matches the order-details layout and Philippine time zone', () => {
   const vouchedAt = new Date('2026-10-04T22:53:00Z');
   const embed = vouchEmbed({
     id: 'user-123',
@@ -459,15 +459,11 @@ test('vouch embed matches the warranty notice and order-details layout', () => {
   }, '1 Deco', 'Great service!', vouchedAt).toJSON();
 
   assert.equal(embed.title, undefined);
-  assert.deepEqual(embed.description.split('\n'), [
-    ': Applies only to `NITRO, PREMSUBS, BOOSTS`',
-    ': Ignore this if you purchased `ROBUX, GAMECREDITS`',
-    ': Show this warranty if your item get revoked',
-  ]);
+  assert.equal(embed.description, undefined);
   assert.deepEqual(embed.fields.map(({ name, value }) => [name, value]), [
     ['✨ • order details', '**buyer:** <@user-123>'],
     ['🔹 item', '1 Deco'],
-    ['🔹 date vouched', 'October 04, 2026 at 10:53 PM UTC'],
+    ['🔹 date vouched', 'October 05, 2026 at 6:53 AM GMT+8'],
     ['🔹 feedback', 'Great service!'],
     ['🔹 proof', 'See the attached proof image below.'],
   ]);

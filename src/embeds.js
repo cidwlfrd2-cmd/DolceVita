@@ -21,16 +21,18 @@ function orderEmbed(order) {
         : order.status === 'expired'
           ? 'expired'
           : order.processingStatus === 'processing' ? 'processing' : 'noted';
-  const customerBy = order.customerId ? `<@${order.customerId}>` : 'Unknown customer';
+  const sourceChannel = order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
   const embed = new EmbedBuilder()
     .setColor(COLORS[order.status])
     .setDescription([
-      `order from 🔒 ${customerBy}`,
-      `• (${order.quantity}) ${order.items ?? order.item}`,
-      `• paid via ${order.paymentMethod ?? 'Not specified'}`,
-      `• status: **${status}**`,
-      `served by ${servedBy} 💙`,
+      '_ _',
+      ` _ _    🧁order from ${sourceChannel}`,
+      ` _ _     ༄   ${order.items ?? order.item}`,
+      ` _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
+      ` _ _     ༄   status: __**${status}**__`,
+      `-# _ _       served by ${servedBy}`,
+      '_ _',
     ].join('\n'));
 
   embed.setTimestamp(new Date(order.createdAt));
@@ -97,16 +99,11 @@ function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: 'UTC',
+    timeZone: 'Asia/Manila',
     timeZoneName: 'short',
   }).format(vouchedAt);
   return new EmbedBuilder()
     .setColor(0x35a16b)
-    .setDescription([
-      ': Applies only to `NITRO, PREMSUBS, BOOSTS`',
-      ': Ignore this if you purchased `ROBUX, GAMECREDITS`',
-      ': Show this warranty if your item get revoked',
-    ].join('\n'))
     .addFields(
       { name: '✨ • order details', value: `**buyer:** <@${user.id}>`, inline: false },
       { name: '🔹 item', value: items, inline: false },
@@ -171,7 +168,7 @@ function orderButtons(order) {
       .setDisabled(!active || order.processingStatus === 'processing'),
     new ButtonBuilder()
       .setCustomId(`order:complete:${order.id}`)
-      .setLabel('done')
+      .setLabel('complete')
       .setStyle(ButtonStyle.Success)
       .setDisabled(!active),
     new ButtonBuilder()

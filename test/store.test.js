@@ -150,7 +150,7 @@ test('ticket product is displayed as the order reference while buttons retain th
     orderButtons(order).toJSON().components.map((button) => [button.custom_id, button.label]),
     [
       [`order:processing:${order.id}`, 'processing'],
-      [`order:complete:${order.id}`, 'done'],
+      [`order:complete:${order.id}`, 'complete'],
       [`order:cancel:${order.id}`, 'cancelled'],
     ],
   );
@@ -172,9 +172,9 @@ test('completed and cancelled statuses override processing in the order embed', 
   };
 
   const completedEmbed = orderEmbed(order).toJSON();
-  assert.match(completedEmbed.description, /status: \*\*done\*\*/);
+  assert.match(completedEmbed.description, /status: __\*\*done\*\*__/);
   const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
-  assert.match(cancelledEmbed.description, /status: \*\*cancelled\*\*/);
+  assert.match(cancelledEmbed.description, /status: __\*\*cancelled\*\*__/);
 });
 
 test('source-channel status labels reflect processing, complete, and cancelled transitions', () => {
@@ -224,11 +224,13 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
 
   assert.equal(embed.fields, undefined);
   assert.equal(embed.description, [
-    'order from 🔒 <@customer-1>',
-    '• (1) Coffee',
-    '• paid via Cash',
-    '• status: **noted**',
-    'served by <@staff-1> 💙',
+    '_ _',
+    ' _ _    🧁order from <#source-1>',
+    ' _ _     ༄   Coffee',
+    ' _ _     ༄   paid via Cash',
+    ' _ _     ༄   status: __**noted**__',
+    '-# _ _       served by <@staff-1>',
+    '_ _',
   ].join('\n'));
 
   const missingOwnerEmbed = orderEmbed({
@@ -241,8 +243,46 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
     sourceChannelId: 'source-2',
     createdAt: new Date().toISOString(),
   }).toJSON();
-  assert.match(missingOwnerEmbed.description, /order from 🔒 Unknown customer/);
+  assert.match(missingOwnerEmbed.description, /order from <#source-2>/);
   assert.match(missingOwnerEmbed.description, /served by Not assigned/);
+});
+
+test('order embed uses the order channel and stylized status line requested by staff', () => {
+  const embed = orderEmbed({
+    id: 'ORDER-9',
+    status: 'pending',
+    processingStatus: 'not_yet',
+    items: 'Coffee',
+    quantity: 1,
+    customerId: 'customer-1',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    sourceChannelId: 'source-1',
+    createdAt: new Date().toISOString(),
+  }).toJSON();
+
+  assert.match(embed.description, /order from <#source-1>/);
+  assert.match(embed.description, /status: __\*\*noted\*\*__/);
+  assert.match(embed.description, /served by <@staff-1>/);
+});
+
+test('vouch embed omits warranty text and shows the date in Philippine time', () => {
+  const date = new Date('2024-01-01T00:00:00Z');
+  const embed = require('../src/embeds').vouchEmbed({ id: 'user-1' }, 'Coffee', 'Great service', date).toJSON();
+
+  assert.equal(embed.description, undefined);
+  const vouchDateField = embed.fields.find((field) => field.name === '🔹 date vouched');
+  assert.ok(vouchDateField);
+  const expected = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Manila',
+    timeZoneName: 'short',
+  }).format(date);
+  assert.equal(vouchDateField.value, expected);
 });
 
 test('vouches persist and are counted only for the requested user and server', () => {

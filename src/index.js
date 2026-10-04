@@ -903,7 +903,7 @@ async function handleCommand(interaction) {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-        timeZone: 'UTC',
+        timeZone: 'Asia/Manila',
       });
       const line = `${date} - ${vouch.items}`;
       if (characterCount + line.length + 1 > 3500) break;
