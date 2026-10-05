@@ -98,6 +98,9 @@ module.exports = [
       .setMinValue(1)
       .setMaxValue(999)),
   new SlashCommandBuilder()
+    .setName('payment')
+    .setDescription('Send the payment reminder in this ticket.'),
+  new SlashCommandBuilder()
     .setName('queue')
     .setDescription('Display the public order queue.'),
   new SlashCommandBuilder()

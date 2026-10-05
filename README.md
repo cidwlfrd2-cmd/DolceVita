@@ -18,8 +18,10 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - When an order is marked **Complete**, the bot also sends the warranty-policy reminder embed to the original order channel and the customer by DM.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
+- `/payment` lets authorized staff send the payment reminder in an active ticket.
+- `,payment` is a message-command shortcut for `/payment`.
 - `/solving amount_one:<number> amount_two:<number>` multiplies two numbers and displays the result.
-- `,calc <number>*<number>` (for example, `,calc 5*5`) sends the result as `5 x 5 = 25` in a title-less embed, then deletes the command message. The bot needs the **Manage Messages** permission in that channel. The `/solving` slash command remains available.
+- `,calc <number>*<number>` (for example, `,calc 5*5`) sends the result as `5 x 5 = 25` in a Discord Components V2 container, then deletes the command message. The bot needs the **Manage Messages** permission in that channel. The `/solving` slash command remains available.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
 - `/set ticket_transcript channel:#transcripts` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a summary embed and attaches the complete conversation and attachment links as a text file; the ticket owner also receives the same transcript by DM when their DMs are available.

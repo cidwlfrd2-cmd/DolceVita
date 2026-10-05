@@ -23,6 +23,8 @@ const {
   vouchPreviewButtons,
   voidedOrderEmbed,
   paymentDetailsEmbed,
+  paymentReminderEmbed,
+  paymentReminderButtons,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
@@ -444,6 +446,16 @@ function isStaff(interaction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages) ?? false;
 }
 
+function isStaffMessage(message) {
+  const settings = store.getSettings(message.guildId);
+  const staffRoleIds = [settings?.staffRoleId, settings?.ownerRoleId].filter(Boolean);
+  if (staffRoleIds.length) {
+    return staffRoleIds.some((roleId) => message.member?.roles.cache.has(roleId))
+      || message.member?.permissions.has(PermissionFlagsBits.Administrator);
+  }
+  return message.member?.permissions.has(PermissionFlagsBits.ManageMessages) ?? false;
+}
+
 async function postTicketPanel(channel) {
   if (!channel?.isTextBased() || typeof channel.send !== 'function') {
     throw new Error('The ticket panel must be posted in a sendable text channel.');
@@ -854,6 +866,22 @@ async function handleCommand(interaction) {
       embeds: [queueEmbed(store.listActive(interaction.guildId))],
       allowedMentions: { parse: [] },
     });
+  }
+
+  if (interaction.commandName === 'payment') {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'You do not have permission to send payment reminders.', ephemeral: true });
+    }
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function' || !ticketOwnerId(channel)) {
+      return interaction.reply({ content: 'Run `/payment` inside an active ticket.', ephemeral: true });
+    }
+    await channel.send({
+      embeds: [paymentReminderEmbed(interaction.guild?.iconURL() ?? null)],
+      components: [paymentReminderButtons()],
+      allowedMentions: { parse: [] },
+    });
+    return interaction.reply({ content: `Payment reminder sent in ${channel}.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'solving') {
@@ -1330,6 +1358,22 @@ client.on('messageCreate', async (message) => {
     ? parseTicketMessageCommand(message.content)
     : null;
   try {
+    if (messageCommand?.name === 'payment') {
+      if (!isStaffMessage(message)) {
+        await message.reply('You do not have permission to send payment reminders.');
+        return;
+      }
+      if (!ticketOwnerId(message.channel)) {
+        await message.reply('Run `,payment` inside an active ticket.');
+        return;
+      }
+      await message.channel.send({
+        embeds: [paymentReminderEmbed(message.guild.iconURL() ?? null)],
+        components: [paymentReminderButtons()],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
     if (messageCommand?.name === 'calc') {
       const result = messageCommand.args.length
         ? multiplyExpression(messageCommand.args.join(' '))

@@ -274,6 +274,7 @@ function helpEmbed(commands) {
   }
   lines.push('', '## Message commands');
   lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
+  lines.push('**,payment** — Send the payment reminder in an active ticket.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)

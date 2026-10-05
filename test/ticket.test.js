@@ -439,6 +439,10 @@ test('calc shortcut parses a single multiplication expression', () => {
     name: 'calc',
     args: [],
   });
+  assert.deepEqual(parseTicketMessageCommand(',payment'), {
+    name: 'payment',
+    args: [],
+  });
   assert.equal(parseTicketMessageCommand(',solving 5*5'), null);
 });
 
@@ -641,11 +645,17 @@ test('/ticketsetup is registered as an administrator command', () => {
   ]);
 });
 
-test('calc is the only supported comma message command', () => {
+test('/payment is registered as a slash command', () => {
+  const command = commands.find((entry) => entry.name === 'payment');
+  assert.ok(command);
+  assert.equal(command.description, 'Send the payment reminder in this ticket.');
+  assert.deepEqual(command.options, []);
+});
+
+test('only calc and payment are supported comma message commands', () => {
   for (const command of [
     ',help',
     ',ticketsetup',
-    ',payment',
     ',setorder 123456789012345678',
     ',setvoided 1234567890',
     ',setvoidedrole 9876543210',
@@ -665,6 +675,7 @@ test('help command lists slash commands and the remaining message command', () =
     '/setup',
     '/solving',
     ',calc <number>*<number>',
+    ',payment',
     '/set vouch',
     '/set ticket_transcript',
     '/set voided',
@@ -680,7 +691,10 @@ test('help command lists slash commands and the remaining message command', () =
   assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message commands'));
   assert.equal(
     embed.description.split('## Message commands\n')[1],
-    '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
+    [
+      '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
+      '**,payment** — Send the payment reminder in an active ticket.',
+    ].join('\n'),
   );
   assert.ok(embed.description.length <= 4096);
 });
