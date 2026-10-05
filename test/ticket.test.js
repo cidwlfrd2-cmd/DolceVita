@@ -4,6 +4,8 @@ const { MessageFlags } = require('discord.js');
 const {
   orderTicketModal,
   warrantyVoidedContainer,
+  voidedRoleRemovedContainer,
+  giveawayContainer,
   ticketPanelButtons,
   ticketEmbed,
   ticketButtons,
@@ -22,6 +24,7 @@ const {
   paymentDetailsEmbed,
   paymentReminderButtons,
   orderCompletionReminderContainer,
+  orderVouchInstructionContainer,
   orderVouchButton,
   orderVouchModal,
   orderTicketTermsContainer,
@@ -46,7 +49,8 @@ const {
 const { parseOrderTicketForm } = require('../src/order-ticket-form');
 const { parseOthersTicketForm } = require('../src/others-ticket-form');
 const { multiplyAmounts, multiplyExpression } = require('../src/multiplication');
-const { replyThenDeleteCommand } = require('../src/message-command-actions');
+const { sendThenDeleteCommand } = require('../src/message-command-actions');
+const { parseGiveawayDuration, selectGiveawayWinners } = require('../src/giveaway-utils');
 
 test('ticket panel contains only the three requested buttons', () => {
   const buttons = ticketPanelButtons().toJSON().components;
@@ -538,6 +542,13 @@ test('completed order reminder is a V2 container with a Vouch button and warrant
   assert.equal(orderVouchButton('ORDER-1').toJSON().components[0].label, 'Vouch');
 });
 
+test('completed order channel vouch instruction is a V2 container', () => {
+  const container = orderVouchInstructionContainer().toJSON();
+
+  assert.equal(container.type, 17);
+  assert.equal(container.components[0].content, 'TYPE `/vouch` TO VOUCH DOLCE VITA, THANKYOU!!');
+});
+
 test('completed order Vouch modal requests validated product, quantity, feedback, and one or two proofs', () => {
   const modal = orderVouchModal('ORDER-1').toJSON();
 
@@ -582,10 +593,12 @@ test('payment reminder has pay and no buttons in the requested order', () => {
   ]);
 });
 
-test('calc shortcut replies with the result before deleting the command message', async () => {
+test('calc shortcut sends the V2 result before deleting the command message', async () => {
   const calls = [];
   const message = {
-    reply: async (payload) => calls.push(['reply', payload]),
+    channel: {
+      send: async (payload) => calls.push(['send', payload]),
+    },
     delete: async () => calls.push(['delete']),
   };
   const reply = {
@@ -593,10 +606,10 @@ test('calc shortcut replies with the result before deleting the command message'
     flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   };
-  const deleteError = await replyThenDeleteCommand(message, reply);
+  const deleteError = await sendThenDeleteCommand(message, reply);
   assert.equal(deleteError, null);
   assert.deepEqual(calls, [
-    ['reply', reply],
+    ['send', reply],
     ['delete'],
   ]);
 });
@@ -604,10 +617,10 @@ test('calc shortcut replies with the result before deleting the command message'
 test('calc shortcut reports command deletion errors to its caller', async () => {
   const deleteError = new Error('Missing Manage Messages permission');
   const message = {
-    reply: async () => {},
+    channel: { send: async () => {} },
     delete: async () => { throw deleteError; },
   };
-  assert.equal(await replyThenDeleteCommand(message, 'result'), deleteError);
+  assert.equal(await sendThenDeleteCommand(message, 'result'), deleteError);
 });
 
 test('/ticketsetup is registered as an administrator command', () => {
@@ -624,6 +637,54 @@ test('/payment is registered as a slash command', () => {
   assert.ok(command);
   assert.equal(command.description, 'Send the payment reminder in this ticket.');
   assert.deepEqual(command.options, []);
+});
+
+test('/giveaway registers the requested subcommands and start options', () => {
+  const command = commands.find((entry) => entry.name === 'giveaway');
+  assert.ok(command);
+  assert.deepEqual(command.options.map(({ name }) => name), ['start', 'end', 'reroll', 'ban', 'banned']);
+  assert.deepEqual(command.options[0].options.map(({ name, required }) => ({ name, required })), [
+    { name: 'prize', required: true },
+    { name: 'host', required: true },
+    { name: 'duration', required: true },
+    { name: 'winners', required: true },
+    { name: 'message_count', required: false },
+    { name: 'message_channel', required: false },
+    { name: 'messagerequirements', required: false },
+    { name: 'override_req_roles', required: false },
+  ]);
+});
+
+test('giveaway V2 container contains the prize and 🎉 join button', () => {
+  const container = giveawayContainer({
+    id: 'giveaway-id',
+    prize: 'Gift card',
+    hostId: '123456789012345678',
+    endsAt: new Date(Date.now() + 60_000).toISOString(),
+    winnerCount: 2,
+    entrants: [],
+    overrideRoleIds: [],
+  }).toJSON();
+  assert.equal(container.type, 17);
+  assert.match(container.components[0].content, /\*\*Prize:\*\* Gift card/);
+  assert.equal(container.components[1].components[0].emoji.name, '🎉');
+  assert.equal(container.components[1].components[0].custom_id, 'giveaway:join:giveaway-id');
+});
+
+test('giveaway duration parsing accepts seconds, minutes, hours, and days within the limit', () => {
+  assert.equal(parseGiveawayDuration('30m'), 30 * 60 * 1000);
+  assert.equal(parseGiveawayDuration('12H'), 12 * 60 * 60 * 1000);
+  assert.equal(parseGiveawayDuration('7d'), 7 * 24 * 60 * 60 * 1000);
+  assert.equal(parseGiveawayDuration('0h'), null);
+  assert.equal(parseGiveawayDuration('1w'), null);
+  assert.equal(parseGiveawayDuration('366d'), null);
+});
+
+test('giveaway winner selection excludes prior winners and does not duplicate picks', () => {
+  const winners = selectGiveawayWinners(['user-1', 'user-2', 'user-3'], 3, ['user-1']);
+  assert.equal(winners.length, 2);
+  assert.equal(new Set(winners).size, winners.length);
+  assert.ok(winners.every((userId) => userId !== 'user-1'));
 });
 
 test('calc is the only supported comma message command', () => {
@@ -658,6 +719,11 @@ test('help command lists slash commands and the remaining message command', () =
     '/stickymessage set',
     '/stickymessage remove',
     '/setupticketcategory',
+    '/giveaway start',
+    '/giveaway end',
+    '/giveaway reroll',
+    '/giveaway ban',
+    '/giveaway banned',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
@@ -725,6 +791,16 @@ test('warranty-void notice is a V2 container with the required owner, item, and 
     '_ _        ⧽ No Vouch = Warranty Voided',
     '_ _',
   ].join('\n'));
+});
+
+test('voided-role removal confirmation is a V2 container mentioning the voucher', () => {
+  const container = voidedRoleRemovedContainer('123456789012345678').toJSON();
+
+  assert.equal(container.type, 17);
+  assert.equal(
+    container.components[0].content,
+    '<@123456789012345678> voided role was removed because they submitted a vouch within 12 hours.',
+  );
 });
 
 test('ticket transcript embed shows the closure details in the requested layout', () => {

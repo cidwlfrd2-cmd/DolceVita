@@ -305,6 +305,49 @@ test('vouches persist and are counted only for the requested user and server', (
   assert.deepEqual(vouches.map((vouch) => vouch.items).sort(), ['Latte', 'Tea']);
 });
 
+test('giveaways, entry bans, and message counts persist with server scoping', () => {
+  const store = createStore();
+  const giveaway = store.createGiveaway({
+    id: 'giveaway-1',
+    guildId: 'guild-1',
+    channelId: 'channel-1',
+    prize: 'Gift card',
+    hostId: 'host-1',
+    durationMs: 60_000,
+    endsAt: new Date(Date.now() + 60_000).toISOString(),
+    winnerCount: 2,
+    messageCount: null,
+    messageChannelId: null,
+    messageRequirements: null,
+    overrideRoleIds: [],
+  });
+  store.setGiveawayMessage(giveaway.id, 'message-1');
+  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), true);
+  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), false);
+  assert.equal(store.addGiveawayEntrant('guild-2', giveaway.id, 'user-2'), false);
+  store.incrementMessageCount('guild-1', 'channel-1', 'user-1');
+  store.incrementMessageCount('guild-1', 'channel-1', 'user-1');
+  assert.equal(store.banFromGiveaways('guild-1', 'user-2', 'staff-1'), true);
+  assert.equal(store.banFromGiveaways('guild-1', 'user-2', 'staff-2'), false);
+
+  const restartedStore = new OrderStore(store.filePath);
+  assert.equal(restartedStore.findGiveawayByMessage('guild-1', 'message-1').id, giveaway.id);
+  assert.equal(restartedStore.getMessageCount('guild-1', 'channel-1', 'user-1'), 2);
+  assert.equal(restartedStore.getMessageCount('guild-2', 'channel-1', 'user-1'), 0);
+  assert.equal(restartedStore.isBannedFromGiveaways('guild-1', 'user-2'), true);
+  assert.equal(restartedStore.isBannedFromGiveaways('guild-2', 'user-2'), false);
+  assert.deepEqual(restartedStore.listActiveGiveaways('guild-1').map(({ id }) => id), ['giveaway-1']);
+  assert.deepEqual(restartedStore.listActiveGiveaways().map(({ id }) => id), ['giveaway-1']);
+
+  const ended = restartedStore.endGiveaway('guild-1', giveaway.id, ['user-1']);
+  assert.equal(ended.status, 'ended');
+  assert.equal(restartedStore.endGiveaway('guild-1', giveaway.id, []), null);
+  assert.deepEqual(
+    restartedStore.addGiveawayReroll('guild-1', giveaway.id, ['user-2']).rerolls[0].winners,
+    ['user-2'],
+  );
+});
+
 test('completed orders qualify for voided-role removal only when vouched within 12 hours', () => {
   const store = createStore();
   const atLimit = store.addOrder({
@@ -346,6 +389,10 @@ test('completed orders qualify for voided-role removal only when vouched within 
   assert.deepEqual(
     store.listCompletedWithinVouchWindow('guild-1', 'user-1', vouchTime).map((order) => order.id),
     [atLimit.id],
+  );
+  assert.deepEqual(
+    store.listCompletedWithinVouchWindow('guild-1', 'user-2', vouchTime).map((order) => order.id),
+    [otherCustomer.id],
   );
 });
 

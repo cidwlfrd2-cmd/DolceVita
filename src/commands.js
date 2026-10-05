@@ -157,6 +157,75 @@ module.exports = [
       .setName('user')
       .setDescription('User to check; defaults to you')),
   new SlashCommandBuilder()
+    .setName('giveaway')
+    .setDescription('Manage server giveaways.')
+    .addSubcommand((subcommand) => subcommand
+      .setName('start')
+      .setDescription('Start a giveaway in this channel.')
+      .addStringOption((option) => option
+        .setName('prize')
+        .setDescription('What the winner will receive')
+        .setRequired(true)
+        .setMaxLength(256))
+      .addUserOption((option) => option
+        .setName('host')
+        .setDescription('Giveaway host')
+        .setRequired(true))
+      .addStringOption((option) => option
+        .setName('duration')
+        .setDescription('Giveaway duration, such as 30m, 12h, or 7d')
+        .setRequired(true)
+        .setMaxLength(20))
+      .addIntegerOption((option) => option
+        .setName('winners')
+        .setDescription('Number of winners to select')
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(100))
+      .addIntegerOption((option) => option
+        .setName('message_count')
+        .setDescription('Minimum tracked messages required to join')
+        .setMinValue(1)
+        .setMaxValue(100000))
+      .addChannelOption((option) => option
+        .setName('message_channel')
+        .setDescription('Channel where required messages must be tracked')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+      .addStringOption((option) => option
+        .setName('messagerequirements')
+        .setDescription('Additional entry requirement instructions')
+        .setMaxLength(500))
+      .addStringOption((option) => option
+        .setName('override_req_roles')
+        .setDescription('Comma-separated role mentions or IDs; only these roles may join')
+        .setMaxLength(1000)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('end')
+      .setDescription('End a giveaway and select winners.')
+      .addStringOption((option) => option
+        .setName('message_id')
+        .setDescription('Message ID of the giveaway')
+        .setRequired(true)
+        .setMaxLength(20)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('reroll')
+      .setDescription('Select replacement winner(s) for a giveaway.')
+      .addStringOption((option) => option
+        .setName('message_id')
+        .setDescription('Message ID of the giveaway')
+        .setRequired(true)
+        .setMaxLength(20)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('ban')
+      .setDescription('Ban a user from joining any giveaway.')
+      .addUserOption((option) => option
+        .setName('user')
+        .setDescription('User to ban from giveaways')
+        .setRequired(true)))
+    .addSubcommand((subcommand) => subcommand
+      .setName('banned')
+      .setDescription('List users banned from giveaways.')),
+  new SlashCommandBuilder()
     .setName('stickymessage')
     .setDescription('Configure a channel sticky message.')
     .addSubcommand((subcommand) => subcommand

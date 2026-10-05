@@ -80,6 +80,59 @@ function warrantyVoidedContainer(order) {
     ].join('\n')));
 }
 
+function voidedRoleRemovedContainer(userId) {
+  return new ContainerBuilder()
+    .setAccentColor(0x35a16b)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      `<@${userId}> voided role was removed because they submitted a vouch within 12 hours.`,
+    ));
+}
+
+function giveawayContainer(giveaway, ended = false) {
+  const endsAt = Math.floor(new Date(giveaway.endsAt).getTime() / 1000);
+  const details = [
+    `## 🎉 ${ended ? 'Giveaway Ended' : 'Giveaway'}`,
+    `**Prize:** ${giveaway.prize}`,
+    `**Host:** <@${giveaway.hostId}>`,
+    `**Winners:** ${giveaway.winnerCount}`,
+    `**Entries:** ${giveaway.entrants.length}`,
+    ended ? '**Status:** Ended' : `**Ends:** <t:${endsAt}:R>`,
+  ];
+  if (giveaway.messageRequirements) details.push(`**Requirements:** ${giveaway.messageRequirements}`);
+  if (giveaway.messageCount && giveaway.messageChannelId) {
+    details.push(`Join requires ${giveaway.messageCount} tracked messages in <#${giveaway.messageChannelId}>.`);
+  }
+  if (giveaway.overrideRoleIds?.length) {
+    details.push(`Only members with ${giveaway.overrideRoleIds.map((roleId) => `<@&${roleId}>`).join(' or ')} may join.`);
+  }
+  if (ended) {
+    details.push(giveaway.winners.length
+      ? `**Winner${giveaway.winners.length === 1 ? '' : 's'}:** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}`
+      : '**Winner:** No eligible entrants.');
+  }
+  const joinButton = new ButtonBuilder()
+    .setCustomId(`giveaway:join:${giveaway.id}`)
+    .setLabel('Join Giveaway')
+    .setEmoji('🎉')
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(ended);
+  return new ContainerBuilder()
+    .setAccentColor(ended ? 0x777777 : 0xe6a23c)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(details.join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(joinButton));
+}
+
+function giveawayWinnersContainer(giveaway, winnerIds) {
+  return new ContainerBuilder()
+    .setAccentColor(0x35a16b)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `## 🎉 Giveaway Reroll: ${giveaway.prize}`,
+      winnerIds.length
+        ? `**New winner${winnerIds.length === 1 ? '' : 's'}:** ${winnerIds.map((id) => `<@${id}>`).join(', ')}`
+        : 'No new eligible entrants are available.',
+    ].join('\n')));
+}
+
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -133,6 +186,13 @@ function orderCompletionReminderContainer(orderId) {
       '› NO VOUCH = no refund, no replacement & no warranty.',
     ].join('\n')))
     .addActionRowComponents(orderVouchButton(orderId));
+}
+
+function orderVouchInstructionContainer() {
+  return new ContainerBuilder()
+    .setAccentColor(0x35a16b)
+    .addTextDisplayComponents(new TextDisplayBuilder()
+      .setContent('TYPE `/vouch` TO VOUCH DOLCE VITA, THANKYOU!!'));
 }
 
 function orderVouchButton(orderId) {
@@ -511,7 +571,11 @@ module.exports = {
   orderContainer,
   orderStatusEmbed,
   warrantyVoidedContainer,
+  voidedRoleRemovedContainer,
+  giveawayContainer,
+  giveawayWinnersContainer,
   orderCompletionReminderContainer,
+  orderVouchInstructionContainer,
   orderVouchButton,
   orderVouchModal,
   multiplicationEmbed,

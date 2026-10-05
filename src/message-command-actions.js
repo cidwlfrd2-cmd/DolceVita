@@ -1,5 +1,5 @@
-async function replyThenDeleteCommand(message, content) {
-  await message.reply(content);
+async function sendThenDeleteCommand(message, content) {
+  await message.channel.send(content);
   try {
     await message.delete();
     return null;
@@ -8,4 +8,4 @@ async function replyThenDeleteCommand(message, content) {
   }
 }
 
-module.exports = { replyThenDeleteCommand };
+module.exports = { sendThenDeleteCommand };

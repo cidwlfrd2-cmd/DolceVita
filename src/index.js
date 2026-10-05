@@ -16,8 +16,12 @@ const {
   orderContainer,
   orderStatusEmbed,
   warrantyVoidedContainer,
+  voidedRoleRemovedContainer,
   orderCompletionReminderContainer,
+  orderVouchInstructionContainer,
   orderVouchModal,
+  giveawayContainer,
+  giveawayWinnersContainer,
   multiplicationEmbed,
   multiplicationContainer,
   vouchEmbed,
@@ -64,7 +68,8 @@ const { parseOrderTicketForm } = require('./order-ticket-form');
 const { parseOrderVouchForm } = require('./order-vouch-form');
 const { parseOthersTicketForm } = require('./others-ticket-form');
 const { multiplyAmounts, multiplyExpression } = require('./multiplication');
-const { replyThenDeleteCommand } = require('./message-command-actions');
+const { sendThenDeleteCommand } = require('./message-command-actions');
+const { parseGiveawayDuration, selectGiveawayWinners } = require('./giveaway-utils');
 const commands = require('./commands');
 
 const store = new OrderStore();
@@ -83,6 +88,47 @@ const pendingTicketClosures = new Map();
 const TICKET_CLOSE_CONFIRMATION_DURATION_MS = 5 * 60 * 1000;
 const pendingVouchPreviews = new Map();
 const VOUCH_PREVIEW_DURATION_MS = 15 * 60 * 1000;
+const scheduledGiveaways = new Map();
+const GIVEAWAY_MAX_TIMEOUT_MS = 2_147_000_000;
+const pendingGiveawayMessageCounts = new Map();
+const GIVEAWAY_MESSAGE_COUNT_FLUSH_MS = 5000;
+
+function giveawayMessageCountKey(guildId, channelId, userId) {
+  return `${guildId}:${channelId}:${userId}`;
+}
+
+function trackGiveawayMessage(message) {
+  const key = giveawayMessageCountKey(message.guildId, message.channelId, message.author.id);
+  pendingGiveawayMessageCounts.set(key, (pendingGiveawayMessageCounts.get(key) ?? 0) + 1);
+}
+
+function trackedGiveawayMessageCount(guildId, channelId, userId) {
+  const key = giveawayMessageCountKey(guildId, channelId, userId);
+  return store.getMessageCount(guildId, channelId, userId) + (pendingGiveawayMessageCounts.get(key) ?? 0);
+}
+
+function flushGiveawayMessageCounts() {
+  if (!pendingGiveawayMessageCounts.size) return;
+  const pending = [...pendingGiveawayMessageCounts.entries()];
+  const counts = pending.map(([key, count]) => {
+    const [guildId, channelId, userId] = key.split(':');
+    return { guildId, channelId, userId, count };
+  });
+  try {
+    store.addMessageCounts(counts);
+    for (const [key, count] of pending) {
+      if (pendingGiveawayMessageCounts.get(key) === count) pendingGiveawayMessageCounts.delete(key);
+    }
+  } catch (error) {
+    console.error('Could not persist tracked giveaway message counts:', error);
+  }
+}
+
+const giveawayMessageCountFlushTimer = setInterval(
+  flushGiveawayMessageCounts,
+  GIVEAWAY_MESSAGE_COUNT_FLUSH_MS,
+);
+giveawayMessageCountFlushTimer.unref();
 
 function discardVouchPreview(previewId) {
   const preview = pendingVouchPreviews.get(previewId);
@@ -98,6 +144,7 @@ async function presentVouchPreview(interaction, {
   proofs,
   directMessage = false,
   ticketOwnerDmId = null,
+  ticketChannelId = null,
 }) {
   const settings = store.getSettings(guildId);
   if (!settings?.vouchChannelId) {
@@ -136,6 +183,7 @@ async function presentVouchPreview(interaction, {
     items,
     vouchedAt,
     ticketOwnerDmId,
+    ticketChannelId,
     directMessage,
     embed,
     proofCollage,
@@ -195,6 +243,7 @@ async function handleOrderVouchModal(interaction) {
     feedback: form.value.feedback,
     proofs,
     directMessage: true,
+    ticketChannelId: order.sourceChannelId,
   });
 }
 
@@ -262,6 +311,22 @@ async function handleVouchPreviewButton(interaction) {
       console.error(`Could not remove the voided role for vouch by ${preview.userId}:`, error);
       voidedRoleResult.roleFailure = true;
     }
+    let voidedRoleDmSent = false;
+    let voidedRoleDmFailure = false;
+    if (voidedRoleResult.removed) {
+      try {
+        const user = await client.users.fetch(preview.userId);
+        await user.send({
+          components: [voidedRoleRemovedContainer(preview.userId)],
+          flags: MessageFlags.IsComponentsV2,
+          allowedMentions: { users: [preview.userId] },
+        });
+        voidedRoleDmSent = true;
+      } catch (error) {
+        console.error(`Could not DM voided-role removal confirmation to ${preview.userId}:`, error);
+        voidedRoleDmFailure = true;
+      }
+    }
     let ownerDmSent = false;
     if (preview.ticketOwnerDmId) {
       try {
@@ -276,10 +341,27 @@ async function handleVouchPreviewButton(interaction) {
         console.error(`Could not DM vouch ${preview.items} to ticket owner ${preview.ticketOwnerDmId}:`, error);
       }
     }
+    let ticketClosureResult = { closed: false, failure: false };
+    if (preview.ticketChannelId) {
+      try {
+        ticketClosureResult = await closeTicketForVouch(
+          preview.guildId,
+          preview.ticketChannelId,
+          preview.userId,
+        );
+      } catch (error) {
+        console.error(`Could not close the ticket after vouch by ${preview.userId}:`, error);
+        ticketClosureResult.failure = true;
+      }
+    }
     discardVouchPreview(previewId);
     await interaction.editReply({
       content: `Your vouch was posted in ${channel}.`
+        + (ticketClosureResult.closed ? ' Your ticket was automatically closed.' : '')
+        + (ticketClosureResult.failure ? ' I could not automatically close your ticket; please contact staff.' : '')
         + (voidedRoleResult.removed ? ' Your voided role was removed.' : '')
+        + (voidedRoleDmSent ? ' I also sent you a DM confirming the role removal.' : '')
+        + (voidedRoleDmFailure ? ' I could not DM you the role-removal confirmation; please check your DM settings.' : '')
         + (voidedRoleResult.roleFailure ? ' I could not remove the configured voided role.' : '')
         + (voidedRoleResult.failures.length
           ? ` I could not update the ticket channel ${voidedRoleResult.failures.join(', ')}.`
@@ -425,9 +507,8 @@ async function removeVoidedRoleForVouch(guildId, userId, vouchedAt) {
 
   const guild = await client.guilds.fetch(guildId);
   const role = await guild.roles.fetch(settings.voidedRoleId);
-  const member = await guild.members.fetch(userId);
+  const member = await guild.members.fetch({ user: userId, force: true });
   if (!role) throw new Error(`Configured voided role ${settings.voidedRoleId} was not found.`);
-  if (!member.roles.cache.has(role.id)) return { removed: false, failures: [] };
   await member.roles.remove(role, 'Vouch submitted within 12 hours of order completion');
 
   const failures = [];
@@ -589,12 +670,18 @@ async function requestTicketClosure(interaction, channel, ownerId, source) {
   });
 }
 
-async function closeTicketChannel(interaction, channel, ownerId, reason) {
-  const settings = store.getSettings(interaction.guildId);
+async function archiveAndDeleteTicket({
+  guildId,
+  channel,
+  ownerId,
+  closedById,
+  closedByTag,
+  reason,
+}) {
+  const settings = store.getSettings(guildId);
   if (!settings?.ticketTranscriptChannelId) {
-    return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+    throw new Error('Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.');
   }
-  await interaction.deferReply({ ephemeral: true });
   const transcriptChannel = await client.channels.fetch(settings.ticketTranscriptChannelId);
   if (!transcriptChannel?.isTextBased() || typeof transcriptChannel.send !== 'function') {
     throw new Error(`Configured transcript channel ${settings.ticketTranscriptChannelId} is not a sendable text channel.`);
@@ -606,7 +693,7 @@ async function closeTicketChannel(interaction, channel, ownerId, reason) {
     channelId: channel.id,
     createdAt: channel.createdAt,
     ownerId,
-    closedById: interaction.user.id,
+    closedById,
     claimedById: claimedMatch?.[1],
     reason,
   });
@@ -631,11 +718,48 @@ async function closeTicketChannel(interaction, channel, ownerId, reason) {
     ownerNotified = false;
     console.error(`Could not DM the ticket transcript for ${channel.id} to owner ${ownerId}:`, error);
   }
-  await channel.delete(`Ticket closed by ${interaction.user.tag}; transcript posted in ${transcriptChannel.id}`);
+  await channel.delete(`Ticket closed by ${closedByTag}; transcript posted in ${transcriptChannel.id}`);
+  return { transcriptChannel, ownerNotified };
+}
+
+async function closeTicketChannel(interaction, channel, ownerId, reason) {
+  const settings = store.getSettings(interaction.guildId);
+  if (!settings?.ticketTranscriptChannelId) {
+    return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+  }
+  await interaction.deferReply({ ephemeral: true });
+  const { transcriptChannel, ownerNotified } = await archiveAndDeleteTicket({
+    guildId: interaction.guildId,
+    channel,
+    ownerId,
+    closedById: interaction.user.id,
+    closedByTag: interaction.user.tag,
+    reason,
+  });
   return interaction.editReply(
     `Ticket closed and deleted. Transcript posted in ${transcriptChannel}.`
     + (ownerNotified ? ' A copy was also sent to the ticket owner by DM.' : ' I could not DM the ticket owner; they may have DMs disabled.'),
   );
+}
+
+async function closeTicketForVouch(guildId, channelId, userId) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel
+    || channel.guildId !== guildId
+    || !channel.isTextBased()
+    || typeof channel.delete !== 'function'
+    || ticketOwnerId(channel) !== userId) {
+    return { closed: false, failure: false };
+  }
+  await archiveAndDeleteTicket({
+    guildId,
+    channel,
+    ownerId: userId,
+    closedById: userId,
+    closedByTag: `vouch by ${userId}`,
+    reason: 'Vouch submitted',
+  });
+  return { closed: true, failure: false };
 }
 
 function isOrderStaff(interaction) {
@@ -651,6 +775,134 @@ function canUseOrderButtons(interaction) {
   if (!settings?.ownerRoleId) return isStaff(interaction);
   return interaction.guild?.ownerId === interaction.user.id
     || memberHasRole(interaction, settings.ownerRoleId);
+}
+
+function canManageGiveaways(interaction) {
+  const settings = store.getSettings(interaction.guildId);
+  return interaction.guild?.ownerId === interaction.user.id
+    || [settings?.adminRoleId, settings?.ownerRoleId]
+      .filter(Boolean)
+      .some((roleId) => memberHasRole(interaction, roleId));
+}
+
+function parseGiveawayRoleIds(value) {
+  if (!value?.trim()) return [];
+  const tokens = value.split(',').map((token) => token.trim());
+  if (tokens.length > 10) return null;
+  const roleIds = tokens.map((token) => {
+    const match = /^(?:<@&(\d{17,20})>|(\d{17,20}))$/.exec(token);
+    return match?.[1] ?? match?.[2] ?? null;
+  });
+  if (roleIds.some((roleId) => !roleId)) return null;
+  return [...new Set(roleIds)];
+}
+
+function scheduleGiveaway(giveaway, delayOverride = null) {
+  if (!giveaway || giveaway.status !== 'active' || scheduledGiveaways.has(giveaway.id)) return;
+  const remainingMs = new Date(giveaway.endsAt).getTime() - Date.now();
+  const timer = setTimeout(async () => {
+    scheduledGiveaways.delete(giveaway.id);
+    try {
+      const current = store.getGiveaway(giveaway.guildId, giveaway.id);
+      if (!current || current.status !== 'active') return;
+      if (new Date(current.endsAt).getTime() > Date.now()) {
+        scheduleGiveaway(current);
+        return;
+      }
+      await finalizeGiveaway(current.guildId, current.id);
+    } catch (error) {
+      console.error(`Could not automatically end giveaway ${giveaway.id}:`, error);
+      scheduleGiveaway(giveaway, 5 * 60 * 1000);
+    }
+  }, Math.max(0, Math.min(delayOverride ?? remainingMs, GIVEAWAY_MAX_TIMEOUT_MS)));
+  timer.unref();
+  scheduledGiveaways.set(giveaway.id, timer);
+}
+
+function restoreScheduledGiveaways() {
+  for (const giveaway of store.listActiveGiveaways()) scheduleGiveaway(giveaway);
+}
+
+async function finalizeGiveaway(guildId, giveawayId) {
+  const giveaway = store.getGiveaway(guildId, giveawayId);
+  if (!giveaway || giveaway.status !== 'active') return null;
+  const channel = await client.channels.fetch(giveaway.channelId);
+  if (!channel
+    || channel.guildId !== guildId
+    || !channel.isTextBased()
+    || typeof channel.send !== 'function') {
+    throw new Error(`Giveaway channel ${giveaway.channelId} is unavailable or not sendable.`);
+  }
+  const message = await channel.messages.fetch(giveaway.messageId);
+  const winners = selectGiveawayWinners(giveaway.entrants, giveaway.winnerCount);
+  const endedAt = new Date().toISOString();
+  const endedPreview = { ...giveaway, status: 'ended', winners, endedAt };
+  await message.edit({
+    components: [giveawayContainer(endedPreview, true)],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  });
+  const endedGiveaway = store.endGiveaway(guildId, giveawayId, winners, endedAt);
+  if (!endedGiveaway) return null;
+  const timeout = scheduledGiveaways.get(giveaway.id);
+  if (timeout) clearTimeout(timeout);
+  scheduledGiveaways.delete(giveaway.id);
+  await channel.send({
+    components: [giveawayWinnersContainer(endedGiveaway, winners)],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { users: winners },
+  });
+  return endedGiveaway;
+}
+
+async function handleGiveawayJoin(interaction) {
+  if (!interaction.inGuild()) {
+    return interaction.reply({ content: 'Giveaways can only be joined in a server.', ephemeral: true });
+  }
+  const giveawayId = interaction.customId.slice('giveaway:join:'.length);
+  const giveaway = store.getGiveaway(interaction.guildId, giveawayId);
+  if (!giveaway || giveaway.status !== 'active' || giveaway.messageId !== interaction.message.id) {
+    return interaction.reply({ content: 'This giveaway is no longer active.', ephemeral: true });
+  }
+  if (Date.now() >= new Date(giveaway.endsAt).getTime()) {
+    await interaction.reply({ content: 'This giveaway has ended.', ephemeral: true });
+    scheduleGiveaway(giveaway);
+    return;
+  }
+  if (store.isBannedFromGiveaways(interaction.guildId, interaction.user.id)) {
+    return interaction.reply({ content: 'You are banned from joining giveaways in this server.', ephemeral: true });
+  }
+  if (giveaway.overrideRoleIds.length
+    && !giveaway.overrideRoleIds.some((roleId) => memberHasRole(interaction, roleId))) {
+    return interaction.reply({ content: 'You need one of the required roles to join this giveaway.', ephemeral: true });
+  }
+  if (giveaway.messageCount && giveaway.messageChannelId) {
+    const count = trackedGiveawayMessageCount(
+      interaction.guildId,
+      giveaway.messageChannelId,
+      interaction.user.id,
+    );
+    if (count < giveaway.messageCount) {
+      return interaction.reply({
+        content: `You need ${giveaway.messageCount} tracked messages in <#${giveaway.messageChannelId}> to join. You have ${count}.`,
+        ephemeral: true,
+      });
+    }
+  }
+  if (!store.addGiveawayEntrant(interaction.guildId, giveaway.id, interaction.user.id)) {
+    return interaction.reply({ content: 'You have already joined this giveaway.', ephemeral: true });
+  }
+  const updated = store.getGiveaway(interaction.guildId, giveaway.id);
+  await interaction.reply({ content: 'You joined the giveaway!', ephemeral: true });
+  try {
+    await interaction.message.edit({
+      components: [giveawayContainer(updated)],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    });
+  } catch (error) {
+    console.error(`Could not update entry count for giveaway ${giveaway.id}:`, error);
+  }
 }
 
 async function refreshOrderMessage(order) {
@@ -672,6 +924,145 @@ async function deleteStickyPost(channel, messageId) {
   } catch (error) {
     if (error.code !== 10008) throw error;
   }
+}
+
+async function handleGiveawayCommand(interaction) {
+  if (!canManageGiveaways(interaction)) {
+    return interaction.reply({
+      content: 'Only users with the configured `/setadmin` or `/setowner` role can manage giveaways.',
+      ephemeral: true,
+    });
+  }
+  const subcommand = interaction.options.getSubcommand();
+  if (subcommand === 'start') {
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+      return interaction.reply({ content: 'Start giveaways in a server text channel.', ephemeral: true });
+    }
+    const durationMs = parseGiveawayDuration(interaction.options.getString('duration', true));
+    if (!durationMs) {
+      return interaction.reply({ content: 'Use a duration from 1s to 365d, such as `30m`, `12h`, or `7d`.', ephemeral: true });
+    }
+    const messageCount = interaction.options.getInteger('message_count');
+    const messageChannel = interaction.options.getChannel('message_channel');
+    if (Boolean(messageCount) !== Boolean(messageChannel)) {
+      return interaction.reply({
+        content: 'Set both `message_count` and `message_channel` to enable the message requirement.',
+        ephemeral: true,
+      });
+    }
+    const overrideRoleIds = parseGiveawayRoleIds(interaction.options.getString('override_req_roles'));
+    if (!overrideRoleIds) {
+      return interaction.reply({
+        content: 'Enter up to 10 comma-separated role mentions or IDs for `override_req_roles`.',
+        ephemeral: true,
+      });
+    }
+    for (const roleId of overrideRoleIds) {
+      if (!await interaction.guild.roles.fetch(roleId)) {
+        return interaction.reply({ content: `Role ${roleId} was not found in this server.`, ephemeral: true });
+      }
+    }
+    if (messageChannel && messageChannel.guildId !== interaction.guildId) {
+      return interaction.reply({ content: 'The message requirement channel must be in this server.', ephemeral: true });
+    }
+    const giveawayId = randomUUID();
+    const giveaway = store.createGiveaway({
+      id: giveawayId,
+      guildId: interaction.guildId,
+      channelId: channel.id,
+      prize: interaction.options.getString('prize', true).trim(),
+      hostId: interaction.options.getUser('host', true).id,
+      createdById: interaction.user.id,
+      durationMs,
+      endsAt: new Date(Date.now() + durationMs).toISOString(),
+      winnerCount: interaction.options.getInteger('winners', true),
+      messageCount,
+      messageChannelId: messageChannel?.id ?? null,
+      messageRequirements: interaction.options.getString('messagerequirements')?.trim() || null,
+      overrideRoleIds,
+    });
+    try {
+      const message = await channel.send({
+        components: [giveawayContainer(giveaway)],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
+      store.setGiveawayMessage(giveaway.id, message.id);
+      scheduleGiveaway(giveaway);
+      return interaction.reply({ content: `Giveaway started in ${channel}. Message ID: \`${message.id}\``, ephemeral: true });
+    } catch (error) {
+      store.deleteGiveaway(giveaway.id);
+      throw error;
+    }
+  }
+
+  if (subcommand === 'ban') {
+    const user = interaction.options.getUser('user', true);
+    const added = store.banFromGiveaways(interaction.guildId, user.id, interaction.user.id);
+    return interaction.reply({
+      content: added ? `${user} is now banned from joining giveaways in this server.` : `${user} is already banned from giveaways.`,
+      allowedMentions: { parse: [] },
+      ephemeral: true,
+    });
+  }
+
+  if (subcommand === 'banned') {
+    const bans = store.listGiveawayBans(interaction.guildId);
+    const lines = bans.length
+      ? bans.map(({ userId }) => `<@${userId}> (\`${userId}\`)`)
+      : ['No users are banned from giveaways.'];
+    const pages = [];
+    let page = `**Giveaway bans (${bans.length})**`;
+    for (const line of lines) {
+      if (page.length + line.length + 1 > 1900) {
+        pages.push(page);
+        page = '';
+      }
+      page += `${page ? '\n' : ''}${line}`;
+    }
+    pages.push(page);
+    await interaction.reply({ content: pages[0], allowedMentions: { parse: [] }, ephemeral: true });
+    for (const content of pages.slice(1)) {
+      await interaction.followUp({ content, allowedMentions: { parse: [] }, ephemeral: true });
+    }
+    return;
+  }
+
+  const messageId = interaction.options.getString('message_id', true).trim();
+  const giveaway = store.findGiveawayByMessage(interaction.guildId, messageId);
+  if (!giveaway) {
+    return interaction.reply({ content: 'No giveaway with that message ID was found in this server.', ephemeral: true });
+  }
+  if (subcommand === 'end') {
+    if (giveaway.status !== 'active') {
+      return interaction.reply({ content: 'That giveaway has already ended.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const ended = await finalizeGiveaway(interaction.guildId, giveaway.id);
+    return interaction.editReply(ended ? `Giveaway ended: <#${ended.channelId}>` : 'That giveaway has already ended.');
+  }
+
+  if (giveaway.status !== 'ended') {
+    return interaction.reply({ content: 'End the giveaway before rerolling its winner(s).', ephemeral: true });
+  }
+  const previousRerollWinners = giveaway.rerolls.flatMap((reroll) => reroll.winners);
+  const winners = selectGiveawayWinners(
+    giveaway.entrants,
+    giveaway.winnerCount,
+    [...giveaway.winners, ...previousRerollWinners],
+  );
+  const updated = store.addGiveawayReroll(interaction.guildId, giveaway.id, winners);
+  const channel = await client.channels.fetch(giveaway.channelId);
+  await channel.send({
+    components: [giveawayWinnersContainer(updated, winners)],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { users: winners },
+  });
+  return interaction.reply({
+    content: winners.length ? `Rerolled winner(s) announced in <#${giveaway.channelId}>.` : 'No new eligible entrants are available.',
+    ephemeral: true,
+  });
 }
 
 async function refreshStickyMessage(message) {
@@ -794,6 +1185,10 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
 }
 
 async function handleCommand(interaction) {
+  if (interaction.commandName === 'giveaway') {
+    return handleGiveawayCommand(interaction);
+  }
+
   if (interaction.commandName === 'help') {
     return interaction.reply({
       embeds: [helpEmbed(commands)],
@@ -1040,6 +1435,9 @@ async function handleCommand(interaction) {
       proofs,
       ticketOwnerDmId: ticketOwnerId(interaction.channel) === interaction.user.id
         ? interaction.user.id
+        : null,
+      ticketChannelId: ticketOwnerId(interaction.channel) === interaction.user.id
+        ? interaction.channelId
         : null,
       directMessage: false,
     });
@@ -1350,6 +1748,13 @@ async function handleButton(interaction) {
         embeds: [statusEmbed],
         allowedMentions: { parse: [] },
       });
+      if (action === 'complete') {
+        await sourceChannel.send({
+          components: [orderVouchInstructionContainer()],
+          flags: MessageFlags.IsComponentsV2,
+          allowedMentions: { parse: [] },
+        });
+      }
     } catch (error) {
       console.error(`Could not send status update for order ${order.id} to source channel ${order.sourceChannelId}:`, error);
       notificationFailures.push(`send an update to the original order channel <#${order.sourceChannelId}>`);
@@ -1405,12 +1810,14 @@ async function handlePaymentButton(interaction) {
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   restoreScheduledWarrantyVoidNotices();
+  restoreScheduledGiveaways();
 });
 
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) await handleCommand(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('vouch-preview:')) await handleVouchPreviewButton(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('giveaway:join:')) await handleGiveawayJoin(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket-close:')) await handleTicketCloseConfirmation(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:vouch:')) await handleOrderVouchButton(interaction);
@@ -1442,6 +1849,9 @@ client.on('messageCreate', async (message) => {
     ? parseTicketMessageCommand(message.content)
     : null;
   try {
+    if (message.guildId && !message.author.bot && !message.webhookId) {
+      trackGiveawayMessage(message);
+    }
     if (messageCommand?.name === 'calc') {
       const result = messageCommand.args.length
         ? multiplyExpression(messageCommand.args.join(' '))
@@ -1450,7 +1860,7 @@ client.on('messageCreate', async (message) => {
         await message.reply('Usage: `,calc <number>*<number>` — enter two finite numbers separated by `*`.');
         return;
       }
-      const deleteError = await replyThenDeleteCommand(
+      const deleteError = await sendThenDeleteCommand(
         message,
         {
           components: [multiplicationContainer(result)],

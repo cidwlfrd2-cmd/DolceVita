@@ -2,7 +2,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
-const EMPTY_STATE = { settings: {}, orders: [], vouches: [], stickyMessages: {} };
+const EMPTY_STATE = {
+  settings: {},
+  orders: [],
+  vouches: [],
+  stickyMessages: {},
+  giveaways: [],
+  giveawayBans: {},
+  messageCounts: {},
+};
 const ORDER_ACTIVE_DURATION_MS = 48 * 60 * 60 * 1000;
 const VOUCH_WINDOW_MS = 12 * 60 * 60 * 1000;
 
@@ -66,6 +74,129 @@ class OrderStore {
     return (state.vouches ?? [])
       .filter((vouch) => vouch.guildId === guildId && vouch.userId === userId)
       .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+  }
+
+  createGiveaway(giveaway) {
+    const state = this.read();
+    state.giveaways ??= [];
+    const entry = {
+      ...giveaway,
+      id: giveaway.id ?? randomUUID(),
+      messageId: null,
+      status: 'active',
+      entrants: [],
+      winners: [],
+      rerolls: [],
+      createdAt: new Date().toISOString(),
+    };
+    state.giveaways.push(entry);
+    this.write(state);
+    return entry;
+  }
+
+  deleteGiveaway(giveawayId) {
+    const state = this.read();
+    const before = state.giveaways?.length ?? 0;
+    state.giveaways = (state.giveaways ?? []).filter((giveaway) => giveaway.id !== giveawayId);
+    if (state.giveaways.length !== before) this.write(state);
+  }
+
+  setGiveawayMessage(giveawayId, messageId) {
+    const state = this.read();
+    const giveaway = (state.giveaways ?? []).find((entry) => entry.id === giveawayId);
+    if (!giveaway) return null;
+    giveaway.messageId = messageId;
+    this.write(state);
+    return giveaway;
+  }
+
+  getGiveaway(guildId, giveawayId) {
+    return (this.read().giveaways ?? [])
+      .find((giveaway) => giveaway.guildId === guildId && giveaway.id === giveawayId) ?? null;
+  }
+
+  findGiveawayByMessage(guildId, messageId) {
+    return (this.read().giveaways ?? [])
+      .find((giveaway) => giveaway.guildId === guildId && giveaway.messageId === messageId) ?? null;
+  }
+
+  listActiveGiveaways(guildId) {
+    return (this.read().giveaways ?? [])
+      .filter((giveaway) => (!guildId || giveaway.guildId === guildId) && giveaway.status === 'active');
+  }
+
+  addGiveawayEntrant(guildId, giveawayId, userId) {
+    const state = this.read();
+    const giveaway = (state.giveaways ?? [])
+      .find((entry) => entry.guildId === guildId && entry.id === giveawayId && entry.status === 'active');
+    if (!giveaway || giveaway.entrants.includes(userId)) return false;
+    giveaway.entrants.push(userId);
+    this.write(state);
+    return true;
+  }
+
+  endGiveaway(guildId, giveawayId, winners, endedAt = new Date().toISOString()) {
+    const state = this.read();
+    const giveaway = (state.giveaways ?? [])
+      .find((entry) => entry.guildId === guildId && entry.id === giveawayId && entry.status === 'active');
+    if (!giveaway) return null;
+    giveaway.status = 'ended';
+    giveaway.winners = winners;
+    giveaway.endedAt = endedAt;
+    this.write(state);
+    return giveaway;
+  }
+
+  addGiveawayReroll(guildId, giveawayId, winners) {
+    const state = this.read();
+    const giveaway = (state.giveaways ?? [])
+      .find((entry) => entry.guildId === guildId && entry.id === giveawayId && entry.status === 'ended');
+    if (!giveaway) return null;
+    giveaway.rerolls ??= [];
+    giveaway.rerolls.push({ winners, createdAt: new Date().toISOString() });
+    this.write(state);
+    return giveaway;
+  }
+
+  banFromGiveaways(guildId, userId, bannedById) {
+    const state = this.read();
+    state.giveawayBans ??= {};
+    state.giveawayBans[guildId] ??= {};
+    const existed = Boolean(state.giveawayBans[guildId][userId]);
+    state.giveawayBans[guildId][userId] = {
+      userId,
+      bannedById,
+      bannedAt: state.giveawayBans[guildId][userId]?.bannedAt ?? new Date().toISOString(),
+    };
+    this.write(state);
+    return !existed;
+  }
+
+  listGiveawayBans(guildId) {
+    return Object.values(this.read().giveawayBans?.[guildId] ?? {});
+  }
+
+  isBannedFromGiveaways(guildId, userId) {
+    return Boolean(this.read().giveawayBans?.[guildId]?.[userId]);
+  }
+
+  incrementMessageCount(guildId, channelId, userId) {
+    this.addMessageCounts([{ guildId, channelId, userId, count: 1 }]);
+    return this.getMessageCount(guildId, channelId, userId);
+  }
+
+  addMessageCounts(counts) {
+    const state = this.read();
+    state.messageCounts ??= {};
+    for (const { guildId, channelId, userId, count } of counts) {
+      const key = `${guildId}:${channelId}:${userId}`;
+      state.messageCounts[key] = (state.messageCounts[key] ?? 0) + count;
+    }
+    this.write(state);
+  }
+
+  getMessageCount(guildId, channelId, userId) {
+    return this.read().messageCounts?.[`${guildId}:${channelId}:${userId}`] ?? 0;
   }
 
   getStickyMessage(guildId, channelId) {
