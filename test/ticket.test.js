@@ -390,11 +390,11 @@ test('ticket creation finds existing tickets and serializes simultaneous submiss
   assert.equal(channels.size, 1);
 });
 
-test('ticket setup is registered as an administrator subcommand', () => {
-  const ticketCommand = commands.find((command) => command.name === 'ticket');
-  assert.ok(ticketCommand);
-  assert.equal(ticketCommand.options[0].name, 'setup');
-  assert.equal(ticketCommand.default_member_permissions, '8');
+test('duplicate ticket command and per-ticket category commands are not registered', () => {
+  assert.equal(commands.find((command) => command.name === 'ticket'), undefined);
+  for (const name of ['ordercategory', 'reportcategory', 'othercategory']) {
+    assert.equal(commands.find((command) => command.name === name), undefined);
+  }
 });
 
 test('/vouch accepts one required proof and an optional second proof', () => {
@@ -636,26 +636,9 @@ test('/ticketsetup is registered as an administrator command', () => {
   const command = commands.find((entry) => entry.name === 'ticketsetup');
   assert.ok(command);
   assert.equal(command.default_member_permissions, '8');
-});
-
-test('ticket category setup slash command takes a category ID and requires administrator permission', () => {
-  const command = commands.find((entry) => entry.name === 'setupticketcategory');
-  assert.ok(command);
-  assert.equal(command.options[0].name, 'category_id');
-  assert.equal(command.options[0].required, true);
-  assert.equal(command.default_member_permissions, '8');
-});
-
-test('per-ticket category slash commands require an admin and category ID', () => {
-  for (const name of ['ordercategory', 'reportcategory', 'othercategory']) {
-    const command = commands.find((entry) => entry.name === name);
-    assert.ok(command);
-    assert.equal(command.default_member_permissions, '8');
-    assert.deepEqual(
-      command.options.map(({ name: optionName, required }) => ({ name: optionName, required })),
-      [{ name: 'category_id', required: true }],
-    );
-  }
+  assert.deepEqual(command.options.map(({ name, required }) => ({ name, required })), [
+    { name: 'staff_role', required: false },
+  ]);
 });
 
 test('calc is the only supported comma message command', () => {
@@ -669,9 +652,6 @@ test('calc is the only supported comma message command', () => {
     ',setrolevoided 9876543210',
     ',setupticketcategory 123456789012345678',
     ',set ticket_transcript 123456789012345678',
-    ',ordercategory 123456789012345678',
-    ',reportcategory 123456789012345678',
-    ',othercategory 123456789012345678',
   ]) {
     assert.equal(parseTicketMessageCommand(command), null, `${command} should not be recognized`);
   }
@@ -689,23 +669,17 @@ test('help command lists slash commands and the remaining message command', () =
     '/set ticket_transcript',
     '/set voided',
     '/set voided_role',
-    '/ticket setup',
     '/ticketsetup',
     '/stickymessage set',
     '/stickymessage remove',
     '/setupticketcategory',
-    '/ordercategory',
-    '/reportcategory',
-    '/othercategory',
   ]) {
     assert.ok(embed.description.includes(commandText), `Expected help embed to include ${commandText}`);
   }
-  assert.match(embed.description, /unclaimed only by the current claimant/);
-  assert.match(embed.description, /automatically delete the ticket channel/);
+  assert.doesNotMatch(embed.description, /Ticket notes|unclaimed only by the current claimant|automatically delete the ticket channel/);
   assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message commands'));
-  assert.ok(embed.description.indexOf('## Message commands') < embed.description.indexOf('## Ticket notes'));
   assert.equal(
-    embed.description.split('## Message commands\n')[1].split('\n\n## Ticket notes')[0],
+    embed.description.split('## Message commands\n')[1],
     '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
   );
   assert.ok(embed.description.length <= 4096);

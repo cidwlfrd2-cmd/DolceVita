@@ -175,19 +175,12 @@ module.exports = [
         .setDescription('Channel to clear; defaults to this channel')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))),
   new SlashCommandBuilder()
-    .setName('ticket')
-    .setDescription('Set up the server ticket panel.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addSubcommand((subcommand) => subcommand
-      .setName('setup')
-      .setDescription('Post the ticket panel in this channel.')
-      .addRoleOption((option) => option
-        .setName('staff_role')
-        .setDescription('Optional role that can view tickets; /setadmin or /setowner roles manage them'))),
-  new SlashCommandBuilder()
     .setName('ticketsetup')
     .setDescription('Post the ticket panel in this channel.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addRoleOption((option) => option
+      .setName('staff_role')
+      .setDescription('Optional role that can view tickets; /setadmin or /setowner roles manage them')),
   new SlashCommandBuilder()
     .setName('setupticketcategory')
     .setDescription('Choose the category for new ticket channels.')
@@ -197,17 +190,4 @@ module.exports = [
       .setDescription('ID of the category where new tickets will be created')
       .setRequired(true)
       .setMaxLength(20)),
-  ...[
-    ['ordercategory', 'Choose the category for order tickets.'],
-    ['reportcategory', 'Choose the category for report tickets.'],
-    ['othercategory', 'Choose the category for other tickets.'],
-  ].map(([name, description]) => new SlashCommandBuilder()
-    .setName(name)
-    .setDescription(description)
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .addStringOption((option) => option
-      .setName('category_id')
-      .setDescription('ID of the category where these tickets will be created')
-      .setRequired(true)
-      .setMaxLength(20))),
 ].map((command) => command.toJSON());

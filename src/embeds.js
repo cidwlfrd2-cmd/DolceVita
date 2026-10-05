@@ -274,9 +274,6 @@ function helpEmbed(commands) {
   }
   lines.push('', '## Message commands');
   lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
-  lines.push('', '## Ticket notes');
-  lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
-  lines.push('Ticket close actions require a reason, post it in the transcript, then automatically delete the ticket channel.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)

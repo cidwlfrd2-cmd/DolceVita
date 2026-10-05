@@ -721,6 +721,10 @@ async function handleCommand(interaction) {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: 'Only server administrators can post the ticket panel.', ephemeral: true });
     }
+    const staffRole = interaction.options.getRole('staff_role');
+    if (staffRole) {
+      store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
+    }
     await postTicketPanel(interaction.channel);
     return interaction.reply({ content: `Ticket panel posted in ${interaction.channel}.`, ephemeral: true });
   }
@@ -738,43 +742,6 @@ async function handleCommand(interaction) {
     }
     store.setSettings(interaction.guildId, { ticketCategoryId: category.id });
     return interaction.reply({ content: `New ticket channels will be created in **${category.name}**.`, ephemeral: true });
-  }
-
-  const ticketCategorySettings = {
-    ordercategory: ['ticketOrderCategoryId', 'order'],
-    reportcategory: ['ticketReportCategoryId', 'report'],
-    othercategory: ['ticketOthersCategoryId', 'other'],
-  };
-  if (ticketCategorySettings[interaction.commandName]) {
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: 'Only server administrators can configure ticket categories.', ephemeral: true });
-    }
-    const [settingKey, label] = ticketCategorySettings[interaction.commandName];
-    const categoryId = interaction.options.getString('category_id', true).trim();
-    let category;
-    try {
-      category = await fetchGuildChannelById(interaction.guild, categoryId);
-    } catch (error) {
-      return interaction.reply({ content: error.message, ephemeral: true });
-    }
-    if (category.type !== ChannelType.GuildCategory) {
-      return interaction.reply({ content: 'That ID is not a category in this server.', ephemeral: true });
-    }
-    store.setSettings(interaction.guildId, { [settingKey]: category.id });
-    return interaction.reply({ content: `New ${label} tickets will be created in **${category.name}**.`, ephemeral: true });
-  }
-
-  if (interaction.commandName === 'ticket' && interaction.options.getSubcommand() === 'setup') {
-    const channel = interaction.channel;
-    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
-      return interaction.reply({ content: 'Run `/ticket setup` in a server text channel.', ephemeral: true });
-    }
-    const staffRole = interaction.options.getRole('staff_role');
-    if (staffRole) {
-      store.setSettings(interaction.guildId, { ticketStaffRoleId: staffRole.id });
-    }
-    await postTicketPanel(channel);
-    return interaction.reply({ content: `Ticket panel posted in ${channel}.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'setup') {
