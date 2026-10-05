@@ -37,19 +37,11 @@ module.exports = [
         .setRequired(true)
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
     .addSubcommand((subcommand) => subcommand
-      .setName('voided')
-      .setDescription('Choose where voided-order alerts are posted.')
-      .addChannelOption((option) => option
-        .setName('channel')
-        .setDescription('Channel for voided-order alerts')
-        .setRequired(true)
-        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)))
-    .addSubcommand((subcommand) => subcommand
       .setName('voided_role')
-      .setDescription('Choose the role granted when an order is marked voided.')
+      .setDescription('Choose the role assigned when an order is completed.')
       .addRoleOption((option) => option
         .setName('role')
-        .setDescription('Role granted to users marked as voided')
+        .setDescription('Role assigned on completion and removed after a vouch within 12 hours')
         .setRequired(true))),
   new SlashCommandBuilder()
     .setName('setowner')

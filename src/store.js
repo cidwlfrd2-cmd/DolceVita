@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 
 const EMPTY_STATE = { settings: {}, orders: [], vouches: [], stickyMessages: {} };
 const ORDER_ACTIVE_DURATION_MS = 48 * 60 * 60 * 1000;
+const VOUCH_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 function expireActiveOrders(state, now = Date.now()) {
   let changed = false;
@@ -65,12 +66,6 @@ class OrderStore {
     return (state.vouches ?? [])
       .filter((vouch) => vouch.guildId === guildId && vouch.userId === userId)
       .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
-  }
-
-  hasVouchSince(guildId, userId, sinceDate) {
-    const threshold = new Date(sinceDate).getTime();
-    return this.listVouches(guildId, userId)
-      .some((vouch) => new Date(vouch.createdAt).getTime() >= threshold);
   }
 
   getStickyMessage(guildId, channelId) {
@@ -190,20 +185,6 @@ class OrderStore {
     }
     order.status = status;
     order.finishedAt = new Date().toISOString();
-    if (status === 'cancelled') {
-      order.voidedAt = null;
-      order.voidedReason = null;
-    }
-    this.write(state);
-    return order;
-  }
-
-  markOrderVoided(orderId, reason) {
-    const state = this.read();
-    const order = state.orders.find((entry) => entry.id === orderId);
-    if (!order || order.voidedAt) return null;
-    order.voidedAt = new Date().toISOString();
-    order.voidedReason = reason;
     this.write(state);
     return order;
   }
@@ -211,6 +192,19 @@ class OrderStore {
   listCompleted(guildId) {
     return this.read().orders
       .filter((order) => order.guildId === guildId && order.status === 'completed');
+  }
+
+  listCompletedWithinVouchWindow(guildId, userId, vouchedAt = new Date()) {
+    const vouchTime = new Date(vouchedAt).getTime();
+    return this.read().orders.filter((order) => {
+      if (order.guildId !== guildId || order.customerId !== userId || order.status !== 'completed') {
+        return false;
+      }
+      const finishedAt = new Date(order.finishedAt).getTime();
+      return Number.isFinite(finishedAt)
+        && finishedAt <= vouchTime
+        && vouchTime - finishedAt <= VOUCH_WINDOW_MS;
+    });
   }
 }
 

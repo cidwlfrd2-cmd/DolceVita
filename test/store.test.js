@@ -305,6 +305,50 @@ test('vouches persist and are counted only for the requested user and server', (
   assert.deepEqual(vouches.map((vouch) => vouch.items).sort(), ['Latte', 'Tea']);
 });
 
+test('completed orders qualify for voided-role removal only when vouched within 12 hours', () => {
+  const store = createStore();
+  const atLimit = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-1',
+    sourceChannelId: 'ticket-1',
+    items: 'Latte',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    quantity: 1,
+  });
+  const tooOld = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-1',
+    sourceChannelId: 'ticket-2',
+    items: 'Tea',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    quantity: 1,
+  });
+  const otherCustomer = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-2',
+    sourceChannelId: 'ticket-3',
+    items: 'Cake',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    quantity: 1,
+  });
+  for (const order of [atLimit, tooOld, otherCustomer]) store.finishOrder(order.id, 'completed');
+
+  const vouchTime = new Date('2026-10-05T12:00:00.000Z');
+  const state = store.read();
+  state.orders.find((order) => order.id === atLimit.id).finishedAt = '2026-10-05T00:00:00.000Z';
+  state.orders.find((order) => order.id === tooOld.id).finishedAt = '2026-10-04T23:59:59.999Z';
+  state.orders.find((order) => order.id === otherCustomer.id).finishedAt = '2026-10-05T00:00:00.000Z';
+  store.write(state);
+
+  assert.deepEqual(
+    store.listCompletedWithinVouchWindow('guild-1', 'user-1', vouchTime).map((order) => order.id),
+    [atLimit.id],
+  );
+});
+
 test('sticky messages persist per channel and can be replaced or removed', () => {
   const store = createStore();
   assert.equal(store.setStickyMessage('guild-1', 'channel-1', 'First notice', 'message-1'), null);

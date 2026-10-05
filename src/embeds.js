@@ -57,29 +57,6 @@ function orderStatusEmbed(order) {
     .setTimestamp();
 }
 
-function voidedOrderEmbed(user, product, reason, markedAt = new Date()) {
-  const username = user?.username ? `@${user.username}` : '@unknown';
-  const userId = user?.id ?? 'unknown';
-  const date = new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(markedAt);
-  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(markedAt);
-  return new EmbedBuilder()
-    .setColor(0xc94c4c)
-    .setTitle('vouch / order voided')
-    .setDescription([
-      `${user?.id ? `<@${user.id}>` : '@user'} has been marked as **voided**`,
-      '',
-      '**user**',
-      `${username} - ${userId}`,
-      '',
-      '**product**',
-      String(product ?? 'Unknown product'),
-      '',
-      '**reason**',
-      String(reason ?? 'no vouch within 12hours'),
-    ].join('\n'))
-    .setFooter({ text: `voided by dolce vita - ${date} - ${time}` });
-}
-
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -274,7 +251,6 @@ function helpEmbed(commands) {
   }
   lines.push('', '## Message commands');
   lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
-  lines.push('**,payment** — Send the payment reminder in an active ticket.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -511,7 +487,6 @@ module.exports = {
   orderButtons,
   orderContainer,
   orderStatusEmbed,
-  voidedOrderEmbed,
   orderCompletionReminderContainer,
   orderVouchButton,
   orderVouchModal,

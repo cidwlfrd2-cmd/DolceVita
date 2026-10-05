@@ -42,7 +42,6 @@ const {
   ticketManagerRoleIds,
   ticketManagerMentionPayload,
 } = require('../src/ticket-permissions');
-const { voidedOrderEmbed } = require('../src/embeds');
 const { parseOrderTicketForm } = require('../src/order-ticket-form');
 const { parseOthersTicketForm } = require('../src/others-ticket-form');
 const { multiplyAmounts, multiplyExpression } = require('../src/multiplication');
@@ -439,10 +438,8 @@ test('calc shortcut parses a single multiplication expression', () => {
     name: 'calc',
     args: [],
   });
-  assert.deepEqual(parseTicketMessageCommand(',payment'), {
-    name: 'payment',
-    args: [],
-  });
+  assert.equal(parseTicketMessageCommand(',payment'), null);
+  assert.equal(parseTicketMessageCommand(',PAYMENT'), null);
   assert.equal(parseTicketMessageCommand(',solving 5*5'), null);
 });
 
@@ -566,30 +563,6 @@ test('completed order Vouch modal requests validated product, quantity, feedback
   );
 });
 
-test('voided order embed includes the required title, issue details, and footer', () => {
-  const date = new Date('2026-10-03T12:34:56Z');
-  const embed = voidedOrderEmbed({
-    id: '1234567890',
-    username: 'alice',
-    tag: 'alice#0001',
-  }, 'ROBUX', 'no vouch within 12hours', date).toJSON();
-
-  assert.equal(embed.title, 'vouch / order voided');
-  assert.equal(embed.description, [
-    '<@1234567890> has been marked as **voided**',
-    '',
-    '**user**',
-    '@alice - 1234567890',
-    '',
-    '**product**',
-    'ROBUX',
-    '',
-    '**reason**',
-    'no vouch within 12hours',
-  ].join('\n'));
-  assert.equal(embed.footer.text, 'voided by dolce vita - 10/3/2026 - 12:34:56 PM');
-});
-
 test('payment details embed includes GCash instructions and the attached payment image', () => {
   const embed = paymentDetailsEmbed().toJSON();
   assert.equal(embed.title, undefined);
@@ -652,10 +625,11 @@ test('/payment is registered as a slash command', () => {
   assert.deepEqual(command.options, []);
 });
 
-test('only calc and payment are supported comma message commands', () => {
+test('calc is the only supported comma message command', () => {
   for (const command of [
     ',help',
     ',ticketsetup',
+    ',payment',
     ',setorder 123456789012345678',
     ',setvoided 1234567890',
     ',setvoidedrole 9876543210',
@@ -675,10 +649,8 @@ test('help command lists slash commands and the remaining message command', () =
     '/setup',
     '/solving',
     ',calc <number>*<number>',
-    ',payment',
     '/set vouch',
     '/set ticket_transcript',
-    '/set voided',
     '/set voided_role',
     '/ticketsetup',
     '/stickymessage set',
@@ -691,10 +663,7 @@ test('help command lists slash commands and the remaining message command', () =
   assert.ok(embed.description.indexOf('## Slash commands') < embed.description.indexOf('## Message commands'));
   assert.equal(
     embed.description.split('## Message commands\n')[1],
-    [
-      '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
-      '**,payment** — Send the payment reminder in an active ticket.',
-    ].join('\n'),
+    '**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.',
   );
   assert.ok(embed.description.length <= 4096);
 });
@@ -705,6 +674,17 @@ test('ticket transcript channel setup is registered under /set for administrator
   assert.ok(transcriptSubcommand);
   assert.equal(transcriptSubcommand.options[0].name, 'channel');
   assert.equal(setCommand.default_member_permissions, '8');
+  assert.equal(setCommand.options.some((option) => option.name === 'voided'), false);
+});
+
+test('/set voided_role configures the completed-order role', () => {
+  const setCommand = commands.find((command) => command.name === 'set');
+  const voidedRole = setCommand.options.find((option) => option.name === 'voided_role');
+
+  assert.ok(voidedRole);
+  assert.equal(voidedRole.options[0].name, 'role');
+  assert.equal(voidedRole.options[0].required, true);
+  assert.match(voidedRole.description, /assigned when an order is completed/);
 });
 
 test('ticket transcript embed shows the closure details in the requested layout', () => {
