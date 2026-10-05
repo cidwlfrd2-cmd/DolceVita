@@ -68,6 +68,15 @@ module.exports = [
       .setRequired(true)
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
   new SlashCommandBuilder()
+    .setName('voidedchannel')
+    .setDescription('Choose where warranty-void notices are posted.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addChannelOption((option) => option
+      .setName('channel')
+      .setDescription('Channel for warranty-void notices')
+      .setRequired(true)
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+  new SlashCommandBuilder()
     .setName('order')
     .setDescription('Submit an order to the public queue.')
     .addStringOption((option) => option

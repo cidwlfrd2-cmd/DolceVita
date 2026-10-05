@@ -349,6 +349,41 @@ test('completed orders qualify for voided-role removal only when vouched within 
   );
 });
 
+test('warranty-void notice state persists and can only be marked once', () => {
+  const store = createStore();
+  const order = store.addOrder({
+    guildId: 'guild-1',
+    customerId: 'user-1',
+    sourceChannelId: 'ticket-1',
+    items: 'Latte',
+    paymentMethod: 'Cash',
+    supporterId: 'staff-1',
+    quantity: 1,
+  });
+  store.finishOrder(order.id, 'completed');
+
+  const markedAt = '2026-10-05T12:00:00.000Z';
+  assert.equal(store.markWarrantyVoidNotified(order.id, markedAt).warrantyVoidNotifiedAt, markedAt);
+  assert.equal(store.markWarrantyVoidNotified(order.id), null);
+  assert.equal(new OrderStore(store.filePath).listCompleted()[0].warrantyVoidNotifiedAt, markedAt);
+});
+
+test('vouches suppress warranty-void notices only inside the 12-hour window', () => {
+  const store = createStore();
+  const from = '2026-10-05T00:00:00.000Z';
+  const to = '2026-10-05T12:00:00.000Z';
+  store.addVouch({ guildId: 'guild-1', userId: 'user-1', items: 'Latte', createdAt: from });
+  assert.equal(store.hasVouchWithinWindow('guild-1', 'user-1', from, to), true);
+  assert.equal(store.hasVouchWithinWindow('guild-2', 'user-1', from, to), false);
+  assert.equal(store.hasVouchWithinWindow('guild-1', 'user-2', from, to), false);
+  assert.equal(store.hasVouchWithinWindow(
+    'guild-1',
+    'user-1',
+    '2026-10-05T00:00:00.001Z',
+    to,
+  ), false);
+});
+
 test('sticky messages persist per channel and can be replaced or removed', () => {
   const store = createStore();
   assert.equal(store.setStickyMessage('guild-1', 'channel-1', 'First notice', 'message-1'), null);

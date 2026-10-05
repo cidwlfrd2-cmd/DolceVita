@@ -3,6 +3,7 @@ const test = require('node:test');
 const { MessageFlags } = require('discord.js');
 const {
   orderTicketModal,
+  warrantyVoidedContainer,
   ticketPanelButtons,
   ticketEmbed,
   ticketButtons,
@@ -652,6 +653,7 @@ test('help command lists slash commands and the remaining message command', () =
     '/set vouch',
     '/set ticket_transcript',
     '/set voided_role',
+    '/voidedchannel',
     '/ticketsetup',
     '/stickymessage set',
     '/stickymessage remove',
@@ -685,6 +687,44 @@ test('/set voided_role configures the completed-order role', () => {
   assert.equal(voidedRole.options[0].name, 'role');
   assert.equal(voidedRole.options[0].required, true);
   assert.match(voidedRole.description, /assigned when an order is completed/);
+});
+
+test('/voidedchannel is an administrator command with a text channel option', () => {
+  const voidedChannelCommands = commands.filter((entry) => entry.name === 'voidedchannel');
+  assert.equal(voidedChannelCommands.length, 1);
+  const [command] = voidedChannelCommands;
+  assert.ok(command);
+  assert.equal(command.default_member_permissions, '8');
+  assert.deepEqual(
+    command.options.map(({ name, required }) => ({ name, required })),
+    [{ name: 'channel', required: true }],
+  );
+});
+
+test('warranty-void notice is a V2 container with the required owner, item, and reason', () => {
+  const container = warrantyVoidedContainer({
+    customerId: '123456789012345678',
+    ticketProduct: 'GAMECREDITS',
+    items: 'Different order description',
+  }).toJSON();
+
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, 0xc94c4c);
+  assert.equal(container.components[0].content, [
+    '_ _',
+    '_ _      ᨳଓ warranty voided',
+    '_ _       <@123456789012345678> has been revoked the **warranty**',
+    '_ _',
+    '_ _       **user**',
+    '_ _        ⧽ <@123456789012345678> | 123456789012345678',
+    '_ _',
+    '_ _       **item**',
+    '_ _        ⧽ GAMECREDITS',
+    '_ _',
+    '_ _       **reason**',
+    '_ _        ⧽ No Vouch = Warranty Voided',
+    '_ _',
+  ].join('\n'));
 });
 
 test('ticket transcript embed shows the closure details in the requested layout', () => {

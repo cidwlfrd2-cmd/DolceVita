@@ -10,11 +10,12 @@ const {
 } = require('discord.js');
 const { randomUUID } = require('node:crypto');
 const path = require('node:path');
-const { OrderStore } = require('./store');
+const { OrderStore, VOUCH_WINDOW_MS } = require('./store');
 const {
   orderButtons,
   orderContainer,
   orderStatusEmbed,
+  warrantyVoidedContainer,
   orderCompletionReminderContainer,
   orderVouchModal,
   multiplicationEmbed,
@@ -77,6 +78,7 @@ const client = new Client({
 });
 const stickyRefreshes = new Map();
 const ticketClaimLocks = new Map();
+const scheduledWarrantyVoidNotices = new Map();
 const pendingTicketClosures = new Map();
 const TICKET_CLOSE_CONFIRMATION_DURATION_MS = 5 * 60 * 1000;
 const pendingVouchPreviews = new Map();
@@ -413,6 +415,11 @@ async function grantVoidedRole(order) {
 async function removeVoidedRoleForVouch(guildId, userId, vouchedAt) {
   const orders = store.listCompletedWithinVouchWindow(guildId, userId, vouchedAt);
   if (!orders.length) return { removed: false, failures: [] };
+  for (const order of orders) {
+    const timeoutId = scheduledWarrantyVoidNotices.get(order.id);
+    if (timeoutId) clearTimeout(timeoutId);
+    scheduledWarrantyVoidNotices.delete(order.id);
+  }
   const settings = store.getSettings(guildId);
   if (!settings?.voidedRoleId) return { removed: false, failures: [] };
 
@@ -445,6 +452,63 @@ async function removeVoidedRoleForVouch(guildId, userId, vouchedAt) {
     }
   }
   return { removed: true, failures };
+}
+
+function scheduleWarrantyVoidNotice(order, delay = null) {
+  if (!order
+    || order.status !== 'completed'
+    || order.warrantyVoidNotifiedAt
+    || scheduledWarrantyVoidNotices.has(order.id)) return;
+
+  const finishedAt = new Date(order.finishedAt).getTime();
+  if (!Number.isFinite(finishedAt)) {
+    console.error(`Cannot schedule warranty-void notice for order ${order.id}: invalid completion time.`);
+    return;
+  }
+  const timeoutId = setTimeout(async () => {
+    scheduledWarrantyVoidNotices.delete(order.id);
+    const currentOrder = store.getOrder(order.id);
+    if (!currentOrder
+      || currentOrder.status !== 'completed'
+      || currentOrder.warrantyVoidNotifiedAt) return;
+
+    try {
+      if (store.hasVouchWithinWindow(
+        currentOrder.guildId,
+        currentOrder.customerId,
+        currentOrder.finishedAt,
+        new Date(finishedAt + VOUCH_WINDOW_MS),
+      )) return;
+      const settings = store.getSettings(currentOrder.guildId);
+      if (!settings?.voidedChannelId) {
+        throw new Error(`No warranty-void channel is configured for guild ${currentOrder.guildId}.`);
+      }
+      const channel = await client.channels.fetch(settings.voidedChannelId);
+      if (!channel
+        || channel.guildId !== currentOrder.guildId
+        || !channel.isTextBased()
+        || typeof channel.send !== 'function') {
+        throw new Error(`Warranty-void channel ${settings.voidedChannelId} is unavailable or not sendable.`);
+      }
+      await channel.send({
+        components: [warrantyVoidedContainer(currentOrder)],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { users: [currentOrder.customerId] },
+      });
+      store.markWarrantyVoidNotified(currentOrder.id);
+    } catch (error) {
+      console.error(`Could not send warranty-void notice for order ${currentOrder.id}:`, error);
+      scheduleWarrantyVoidNotice(currentOrder, 5 * 60 * 1000);
+    }
+  }, delay ?? Math.max(0, finishedAt + VOUCH_WINDOW_MS - Date.now()));
+  timeoutId.unref();
+  scheduledWarrantyVoidNotices.set(order.id, timeoutId);
+}
+
+function restoreScheduledWarrantyVoidNotices() {
+  for (const order of store.listCompleted()) {
+    scheduleWarrantyVoidNotice(order);
+  }
 }
 
 function memberHasRole(interaction, roleId) {
@@ -827,6 +891,18 @@ async function handleCommand(interaction) {
     const channel = interaction.options.getChannel('channel', true);
     store.setSettings(interaction.guildId, { orderChannelId: channel.id });
     return interaction.reply({ content: `New orders will be posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'voidedchannel') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only server administrators can set the warranty-void channel.', ephemeral: true });
+    }
+    const channel = interaction.options.getChannel('channel', true);
+    if (!channel.isTextBased() || typeof channel.send !== 'function' || channel.guildId !== interaction.guildId) {
+      return interaction.reply({ content: 'Choose a text channel in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { voidedChannelId: channel.id });
+    return interaction.reply({ content: `Warranty-void notices will be posted in ${channel}.`, ephemeral: true });
   }
 
   if (interaction.commandName === 'order') {
@@ -1248,6 +1324,7 @@ async function handleButton(interaction) {
   const completionReminder = action === 'complete' ? orderCompletionReminderContainer(order.id) : null;
   const notificationFailures = [];
   if (action === 'complete') {
+    scheduleWarrantyVoidNotice(order);
     try {
       await grantVoidedRole(order);
     } catch (error) {
@@ -1327,6 +1404,7 @@ async function handlePaymentButton(interaction) {
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+  restoreScheduledWarrantyVoidNotices();
 });
 
 client.on('interactionCreate', async (interaction) => {

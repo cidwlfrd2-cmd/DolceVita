@@ -191,7 +191,26 @@ class OrderStore {
 
   listCompleted(guildId) {
     return this.read().orders
-      .filter((order) => order.guildId === guildId && order.status === 'completed');
+      .filter((order) => order.status === 'completed' && (!guildId || order.guildId === guildId));
+  }
+
+  markWarrantyVoidNotified(orderId, notifiedAt = new Date().toISOString()) {
+    const state = this.read();
+    const order = state.orders.find((entry) => entry.id === orderId);
+    if (!order || order.status !== 'completed' || order.warrantyVoidNotifiedAt) return null;
+    order.warrantyVoidNotifiedAt = notifiedAt;
+    this.write(state);
+    return order;
+  }
+
+  hasVouchWithinWindow(guildId, userId, fromDate, toDate) {
+    const from = new Date(fromDate).getTime();
+    const to = new Date(toDate).getTime();
+    return (this.read().vouches ?? []).some((vouch) => {
+      if (vouch.guildId !== guildId || vouch.userId !== userId) return false;
+      const createdAt = new Date(vouch.createdAt).getTime();
+      return Number.isFinite(createdAt) && createdAt >= from && createdAt <= to;
+    });
   }
 
   listCompletedWithinVouchWindow(guildId, userId, vouchedAt = new Date()) {
@@ -208,4 +227,4 @@ class OrderStore {
   }
 }
 
-module.exports = { OrderStore };
+module.exports = { OrderStore, VOUCH_WINDOW_MS };

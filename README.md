@@ -16,7 +16,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - Orders remain active for 48 hours after submission. Orders that are still pending or claimed at the end of that period expire and can no longer be processed, completed, or cancelled.
 - When an order is marked **Processing**, **Complete**, or **Cancelled**, the bot sends a status-update embed both to the channel where `/order` was run and by DM to the order submitter.
 - When an order is marked **Complete**, the bot also sends the warranty-policy reminder embed to the original order channel and the customer by DM.
-- The role configured with `/set voided_role` is assigned to the order customer when an order is completed. It is removed if they submit a vouch within 12 hours, and their order ticket is notified.
+- The role configured with `/set voided_role` is assigned to the order customer when an order is completed. It is removed if they submit a vouch within 12 hours, and their order ticket is notified. If they do not vouch within 12 hours, the warranty-void notice is posted in the channel configured with `/voidedchannel`.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/payment` lets authorized staff send the payment reminder in an active ticket.
@@ -25,6 +25,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
 - `/set voided_role role:<role>` configures the role assigned to the order customer when an order is completed. A vouch submitted within 12 hours removes the role and posts a notice in the order ticket.
+- `/voidedchannel channel:#channel` configures where the warranty-void notice is sent after 12 hours without a vouch.
 - `/set ticket_transcript channel:#transcripts` lets an administrator choose where closed ticket transcripts are posted. Closing a ticket posts a summary embed and attaches the complete conversation and attachment links as a text file; the ticket owner also receives the same transcript by DM when their DMs are available.
 - `/setupticketcategory category_id:<category id>` sets the fallback category for new ticket channels.
 - `/help` posts an embed with slash commands and the remaining `,calc` message command.

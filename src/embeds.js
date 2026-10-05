@@ -57,6 +57,29 @@ function orderStatusEmbed(order) {
     .setTimestamp();
 }
 
+function warrantyVoidedContainer(order) {
+  const user = `<@${order.customerId}>`;
+  const userId = String(order.customerId ?? 'unknown');
+  const product = String(order.ticketProduct ?? order.items ?? order.item ?? 'Unknown product');
+  return new ContainerBuilder()
+    .setAccentColor(0xc94c4c)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '_ _',
+      '_ _      ᨳଓ warranty voided',
+      `_ _       ${user} has been revoked the **warranty**`,
+      '_ _',
+      '_ _       **user**',
+      `_ _        ⧽ ${user} | ${userId}`,
+      '_ _',
+      '_ _       **item**',
+      `_ _        ⧽ ${product}`,
+      '_ _',
+      '_ _       **reason**',
+      '_ _        ⧽ No Vouch = Warranty Voided',
+      '_ _',
+    ].join('\n')));
+}
+
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -487,6 +510,7 @@ module.exports = {
   orderButtons,
   orderContainer,
   orderStatusEmbed,
+  warrantyVoidedContainer,
   orderCompletionReminderContainer,
   orderVouchButton,
   orderVouchModal,
