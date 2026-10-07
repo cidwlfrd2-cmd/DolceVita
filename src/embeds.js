@@ -2,26 +2,18 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ContainerBuilder,
   EmbedBuilder,
-  FileUploadBuilder,
-  LabelBuilder,
-  MediaGalleryBuilder,
-  MediaGalleryItemBuilder,
   ModalBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
 const { orderStatusLabel } = require('./order-status');
 const { orderReference } = require('./order-reference');
 
+const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
-const SHOP_ANNOUNCEMENT_ROLE_ID = '1555603985694588940';
 
-function orderContainer(order) {
+function orderEmbed(order) {
   const status = order.status === 'completed'
     ? 'done'
     : order.status === 'cancelled'
@@ -31,98 +23,20 @@ function orderContainer(order) {
           : order.processingStatus === 'processing' ? 'processing' : 'noted';
   const sourceChannel = order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
-  const item = order.items ?? order.item;
-  const quantity = order.quantity ?? 1;
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+  const embed = new EmbedBuilder()
+    .setColor(COLORS[order.status])
+    .setDescription([
       '_ _',
-      ` _ _    🧁   order from ${sourceChannel}`,
-      `  _ _     ⤷   ${item} (x${quantity})`,
-      `   _ _     ⤷   paid via ${order.paymentMethod ?? 'Not specified'}`,
-      `    _ _     ⤷   status: __**${status}**__`,
-      `     _ _     ⤷   served by ${servedBy}`,
-      '     _ _',
-    ].join('\n')))
-    .addActionRowComponents(orderButtons(order));
-}
-
-function dmsUserContainer(guildName, reply) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `## Message from ${guildName}`,
-      reply,
-    ].join('\n\n')));
-}
-
-function messageContainer(text) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
-}
-
-function openShopContainer() {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
+      ` _ _    🧁order from ${sourceChannel}`,
+      ` _ _     ༄   ${order.items ?? order.item}`,
+      ` _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
+      ` _ _     ༄   status: __**${status}**__`,
+      `-# _ _       served by ${servedBy}`,
       '_ _',
-      ':candy:  **Dolce Vita is now __open__**',
-      '',
-      'we never serve rush orders.',
-      'check our pricelist before ordering.',
-      '',
-      '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
-      '→ [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
-      '→ [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
-      '→ [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
-      '→ [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
-    ].join('\n')))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Order Here')
-        .setStyle(ButtonStyle.Link)
-        .setURL('https://discord.com/channels/1555578509743755306/1555625940111855697'),
-    ));
-}
+    ].join('\n'));
 
-function closeShopContainer() {
-  return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '_ _',
-      ':candy:   **Dolce Vita is now closed**',
-      '',
-      'Thank you to everyone who supported Dolce Vita,',
-      'We appreciate all of you.',
-      '',
-      'we\'re currently closed but you still can create a ticket',
-      '',
-      'if you create a ticket while closed please wait for',
-      'Dolce Vita Staff to open the shop and assist you.',
-    ].join('\n')))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
-    ))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '**what happened?**',
-      '> we\'re busy/sleeping or at school/work, and improving our services',
-      '> to serve y\'all better',
-    ].join('\n')))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '**what can I do?**',
-      '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
-      '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
-      '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
-    ].join('\n')))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      'thank you for patience and understanding. See you soon!!',
-    ))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Announcement')
-        .setStyle(ButtonStyle.Link)
-        .setURL('https://discord.com/channels/1555578509743755306/1555826478522835014'),
-    ));
+  embed.setTimestamp(new Date(order.createdAt));
+  return embed;
 }
 
 function orderStatusEmbed(order) {
@@ -141,88 +55,33 @@ function orderStatusEmbed(order) {
     .setTimestamp();
 }
 
-function warrantyVoidedContainer(order) {
-  const user = `<@${order.customerId}>`;
-  const userId = String(order.customerId ?? 'unknown');
-  const product = `${order.ticketProduct ?? order.items ?? order.item ?? 'Unknown product'} (x${order.quantity ?? 1})`;
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '_ _',
-      '_ _      ᨳଓ warranty voided',
-      `_ _       ${user} has been revoked the **warranty**`,
-      '_ _',
-      '_ _       **user**',
-      `_ _        ⧽ ${user} | ${userId}`,
-      '_ _',
-      '_ _       **item**',
-      `_ _        ⧽ ${product}`,
-      '_ _',
-      '_ _       **reason**',
-      '_ _        ⧽ No Vouch = Warranty Voided',
-      '_ _',
-    ].join('\n')));
-}
-
-function voidedRoleRemovedContainer(userId) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `<@${userId}> voided role was removed because they submitted a vouch within 12 hours.`,
-    ));
-}
-
-function giveawayContainer(giveaway, ended = false) {
-  const endsAt = Math.floor(new Date(giveaway.endsAt).getTime() / 1000);
-  const details = [
-    `## 🎉 ${ended ? 'Giveaway Ended' : 'Giveaway'}`,
-    `**Prize:** ${giveaway.prize}`,
-    `**Host:** <@${giveaway.hostId}>`,
-    `**Winners:** ${giveaway.winnerCount}`,
-    `**Entries:** ${giveaway.entrants.length}`,
-    ended ? '**Status:** Ended' : `**Ends:** <t:${endsAt}:R>`,
-  ];
-  if (giveaway.messageRequirements) details.push(`**Requirements:** ${giveaway.messageRequirements}`);
-  if (giveaway.messageCount && giveaway.messageChannelId) {
-    details.push(`Join requires ${giveaway.messageCount} tracked messages in <#${giveaway.messageChannelId}>.`);
-  }
-  if (giveaway.overrideRoleIds?.length) {
-    details.push(`Only members with ${giveaway.overrideRoleIds.map((roleId) => `<@&${roleId}>`).join(' or ')} may join.`);
-  }
-  if (ended) {
-    details.push(giveaway.winners.length
-      ? `**Winner${giveaway.winners.length === 1 ? '' : 's'}:** ${giveaway.winners.map((id) => `<@${id}>`).join(', ')}`
-      : '**Winner:** No eligible entrants.');
-  }
-  const joinButton = new ButtonBuilder()
-    .setCustomId(`giveaway:join:${giveaway.id}`)
-    .setLabel('Join Giveaway')
-    .setEmoji('🎉')
-    .setStyle(ButtonStyle.Success)
-    .setDisabled(ended);
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(details.join('\n')))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(joinButton));
-}
-
-function giveawayWinnersContainer(giveaway, winnerIds) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `## 🎉 Giveaway Reroll: ${giveaway.prize}`,
-      winnerIds.length
-        ? `**New winner${winnerIds.length === 1 ? '' : 's'}:** ${winnerIds.map((id) => `<@${id}>`).join(', ')}`
-        : 'No new eligible entrants are available.',
-    ].join('\n')));
+function voidedOrderEmbed(user, product, reason, markedAt = new Date()) {
+  const username = user?.username ? `@${user.username}` : '@unknown';
+  const userId = user?.id ?? 'unknown';
+  const date = new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(markedAt);
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(markedAt);
+  return new EmbedBuilder()
+    .setColor(0xc94c4c)
+    .setTitle('vouch / order voided')
+    .setDescription([
+      `${user?.id ? `<@${user.id}>` : '@user'} has been marked as **voided**`,
+      '',
+      '**user**',
+      `${username} - ${userId}`,
+      '',
+      '**product**',
+      String(product ?? 'Unknown product'),
+      '',
+      '**reason**',
+      String(reason ?? 'no vouch within 12hours'),
+    ].join('\n'))
+    .setFooter({ text: `voided by dolce vita - ${date} - ${time}` });
 }
 
 function multiplicationEmbed({ amountOne, amountTwo, product }) {
   return new EmbedBuilder()
     .setColor(0x3478c7)
     .setDescription(`**${amountOne} x ${amountTwo} = ${product}**`);
-}
-
-function multiplicationContainer({ amountOne, amountTwo, product }) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder()
-      .setContent(`**${amountOne} x ${amountTwo} = ${product}**`));
 }
 
 function paymentReminderEmbed(serverIconUrl) {
@@ -233,115 +92,37 @@ function paymentReminderEmbed(serverIconUrl) {
   return embed;
 }
 
-function formatVouchDate(vouchedAt) {
-  return new Intl.DateTimeFormat('en-US', {
+function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
+  const date = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'long',
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
-  }).format(vouchedAt) + ' PHT (UTC+8)';
-}
-
-function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
+    timeZoneName: 'short',
+  }).format(vouchedAt);
   return new EmbedBuilder()
     .setColor(0x35a16b)
     .addFields(
       { name: '✨ • order details', value: `**buyer:** <@${user.id}>`, inline: false },
       { name: '🔹 item', value: items, inline: false },
-      { name: '🔹 date vouched', value: formatVouchDate(vouchedAt), inline: false },
+      { name: '🔹 date vouched', value: date, inline: false },
       { name: '🔹 feedback', value: feedback, inline: false },
       { name: '🔹 proof', value: 'See the attached proof image below.', inline: false },
     );
 }
 
-function warrantyActivatedContainer(userId, items, vouchedAt = new Date()) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      '<:blank:1557365898216611841>        <a:vitacheck:1557378165457027072>    **WARRANTY ACTIVATED *!***',
-      '_ _',
-      '        ⧽ applies only to (nitro, premium subs, svboosts)',
-      '        ⧽ you may ignore this if you purchased discord items',
-      '        ⧽ present this if your item gets **revoked**',
-      '_ _',
-      '-# _ _     Deleting this message will automatically void the warranty',
-      '',
-      '════════════════════════',
-      '<:suchiblank:1406916898201010217>  ',
-      '<:suchiblank:1406916898201010217> 🍩   **order details**',
-      '',
-      '୭ ˚. ᵎᵎ **buyer: **',
-      `         ⧽ <@${userId}>`,
-      '୭ ˚. ᵎᵎ  item:',
-      `         ⧽ ${items}`,
-      '୭ ˚. ᵎᵎ  date vouched:',
-      `         ⧽ ${formatVouchDate(vouchedAt)}`,
-      '୭ ˚. ᵎᵎ  proof:',
-    ].join('\n')))
-    .addMediaGalleryComponents(new MediaGalleryBuilder().addItems(
-      new MediaGalleryItemBuilder().setURL('attachment://vouch-proofs.png'),
-    ));
-}
-
-function orderCompletionReminderContainer(orderId) {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+function orderCompletionReminderEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x35a16b)
+    .setDescription([
       '**REMINDERS : WARRANTY POLICY!!**',
       '› All completed orders come with a 12-hours warranty.',
       '› Replacements will only be provided for verified issues covered by warranty.',
       '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
-      '› vouch within 12 hrs αfter clαiming order.',
       '› NO VOUCH = no refund, no replacement & no warranty.',
-    ].join('\n')))
-    .addActionRowComponents(orderVouchButton(orderId));
-}
-
-function orderVouchInstructionContainer() {
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder()
-      .setContent('TYPE `/vouch` TO VOUCH DOLCE VITA, THANKYOU!!'));
-}
-
-function orderVouchButton(orderId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`order:vouch:${orderId}`)
-      .setLabel('Vouch')
-      .setStyle(ButtonStyle.Success),
-  );
-}
-
-function orderVouchModal(orderId) {
-  return new ModalBuilder()
-    .setCustomId(`order-vouch-form:${orderId}`)
-    .setTitle('VOUCH FORM')
-    .addLabelComponents(
-      new LabelBuilder()
-        .setLabel('Product')
-        .setDescription('Enter one: DEKOR / GAMECREDITS / SVBOOST / ROBUX')
-        .setTextInputComponent(new TextInputBuilder()
-          .setCustomId('order-vouch-product')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(20)
-          .setPlaceholder('ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX')),
-      new LabelBuilder()
-        .setLabel('Feedback')
-        .setTextInputComponent(new TextInputBuilder()
-          .setCustomId('order-vouch-feedback')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-          .setMaxLength(1024)),
-      new LabelBuilder()
-        .setLabel('Proof')
-        .setDescription('Upload 1-2 proof images.')
-        .setFileUploadComponent(new FileUploadBuilder()
-          .setCustomId('order-vouch-proof')
-          .setMinValues(1)
-          .setMaxValues(2)
-          .setRequired(true)),
-    );
+    ].join('\n'));
 }
 
 function paymentDetailsEmbed() {
@@ -431,8 +212,11 @@ function helpEmbed(commands) {
     )) ?? [];
     lines.push(`**/${command.name}${options.length ? ` ${options.join(' ')}` : ''}** — ${command.description}`);
   }
-  lines.push('', '## Message commands');
+  lines.push('', '## Message shortcuts');
   lines.push('**,calc <number>*<number>** — Multiply two numbers, then automatically delete the command message.');
+  lines.push('', '## Ticket notes');
+  lines.push('Claimed tickets can be unclaimed only by the current claimant, allowing another authorized staff member to claim the ticket.');
+  lines.push('Ticket close actions require a reason, post it in the transcript, then automatically delete the ticket channel.');
 
   return new EmbedBuilder()
     .setColor(0x3478c7)
@@ -469,7 +253,7 @@ function orderTicketModal() {
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(1024)
-          .setPlaceholder('ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX'),
+          .setPlaceholder('DEKOR / GAMECREDITS / SVBOOST / ROBUX'),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -478,7 +262,7 @@ function orderTicketModal() {
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(4)
-          .setPlaceholder('1-1000'),
+          .setPlaceholder('1-9999'),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -567,23 +351,6 @@ function ticketEmbed(type, user, orderForm, reportForm, othersForm) {
   return embed;
 }
 
-function orderTicketTermsContainer(accepted = false) {
-  const button = new ButtonBuilder()
-    .setCustomId('ticket:terms-agree')
-    .setLabel(accepted ? 'Terms accepted' : 'I agree to the terms')
-    .setStyle(ButtonStyle.Success)
-    .setDisabled(accepted);
-  return new ContainerBuilder()
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      "🧁  ֹ **dolce vita's terms of service** 𓂅 ̼",
-      'all sweeties bought are final and non-refundable.',
-      '────୨ৎ────────୨ৎ────────୨ৎ────────୨ৎ───────',
-      '» Force refunds are not accepted.',
-      '» No cancellation or requesting refunds when order status is processing.',
-    ].join('\n')))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(button));
-}
-
 function ticketButtons(claimed = false) {
   const buttons = [
     new ButtonBuilder()
@@ -666,26 +433,13 @@ function ticketTranscriptEmbed({
 
 module.exports = {
   orderButtons,
-  orderContainer,
-  SHOP_ANNOUNCEMENT_ROLE_ID,
-  dmsUserContainer,
-  messageContainer,
-  openShopContainer,
-  closeShopContainer,
+  orderEmbed,
   orderStatusEmbed,
-  warrantyVoidedContainer,
-  voidedRoleRemovedContainer,
-  giveawayContainer,
-  giveawayWinnersContainer,
-  orderCompletionReminderContainer,
-  orderVouchInstructionContainer,
-  orderVouchButton,
-  orderVouchModal,
+  voidedOrderEmbed,
+  orderCompletionReminderEmbed,
   multiplicationEmbed,
-  multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
-  warrantyActivatedContainer,
   paymentDetailsEmbed,
   paymentReminderButtons,
   vouchPreviewButtons,
@@ -701,5 +455,4 @@ module.exports = {
   ticketEmbed,
   ticketPanelButtons,
   ticketTranscriptEmbed,
-  orderTicketTermsContainer,
 };

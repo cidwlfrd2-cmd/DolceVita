@@ -16,6 +16,10 @@ function hasTicketManagerRole(settings, memberHasRole) {
   return ticketManagerRoleIds(settings).some(memberHasRole);
 }
 
+function hasVoidedRole(settings, memberHasRole) {
+  return Boolean(settings?.voidedRoleId && memberHasRole(settings.voidedRoleId));
+}
+
 function ticketManagerMentionPayload(settings) {
   const roleIds = ticketManagerRoleIds(settings);
   return {
@@ -59,6 +63,7 @@ module.exports = {
   ticketAccessRoleIds,
   ticketManagerRoleIds,
   hasTicketManagerRole,
+  hasVoidedRole,
   ticketManagerMentionPayload,
   ticketOwnerPermissionOverwrite,
   ticketAccessRolePermissionOverwrite,

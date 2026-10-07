@@ -96,8 +96,9 @@ module.exports = [
     .addIntegerOption((option) => option
       .setName('quantity')
       .setDescription('How many?')
+      .setRequired(true)
       .setMinValue(1)
-      .setMaxValue(999)),
+      .setMaxValue(9999)),
   new SlashCommandBuilder()
     .setName('payment')
     .setDescription('Send the payment reminder in this ticket.'),
@@ -130,6 +131,9 @@ module.exports = [
       .setName('channel')
       .setDescription('Channel to post in; defaults to this channel')
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+  new SlashCommandBuilder()
+    .setName('robuxform')
+    .setDescription('Post the Robux fill-up form.'),
   new SlashCommandBuilder()
     .setName('openshop')
     .setDescription('Post the shop-open announcement.'),

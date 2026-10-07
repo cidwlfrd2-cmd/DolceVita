@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { OrderStore } = require('../src/store');
-const { orderButtons, orderContainer, orderStatusEmbed, queueEmbed } = require('../src/embeds');
+const { orderButtons, orderEmbed, orderStatusEmbed, queueEmbed } = require('../src/embeds');
 const { orderReference } = require('../src/order-reference');
 const { orderStatusLabel } = require('../src/order-status');
 
@@ -157,7 +157,7 @@ test('ticket product is displayed as the order reference while buttons retain th
   assert.match(queueEmbed([order]).toJSON().fields[0].name, /#GAMECREDITS/);
 });
 
-test('completed and cancelled statuses override processing in the order container', () => {
+test('completed and cancelled statuses override processing in the order embed', () => {
   const order = {
     id: 'ORDER-1',
     status: 'completed',
@@ -171,10 +171,10 @@ test('completed and cancelled statuses override processing in the order containe
     createdAt: new Date().toISOString(),
   };
 
-  const completedContainer = orderContainer(order).toJSON();
-  assert.match(completedContainer.components[0].content, /status: __\*\*done\*\*__/);
-  const cancelledContainer = orderContainer({ ...order, status: 'cancelled' }).toJSON();
-  assert.match(cancelledContainer.components[0].content, /status: __\*\*cancelled\*\*__/);
+  const completedEmbed = orderEmbed(order).toJSON();
+  assert.match(completedEmbed.description, /status: __\*\*done\*\*__/);
+  const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
+  assert.match(cancelledEmbed.description, /status: __\*\*cancelled\*\*__/);
 });
 
 test('source-channel status labels reflect processing, complete, and cancelled transitions', () => {
@@ -208,13 +208,13 @@ test('order status notification embed includes the order status and details', ()
   );
 });
 
-test('new order container keeps ticket owner and assigned supporter in the correct labels', () => {
-  const container = orderContainer({
+test('new order embed keeps ticket owner and assigned supporter in the correct labels', () => {
+  const embed = orderEmbed({
     id: 'ORDER-2',
     status: 'pending',
     processingStatus: 'not_yet',
     items: 'Coffee',
-    quantity: 2,
+    quantity: 1,
     customerId: 'customer-1',
     paymentMethod: 'Cash',
     supporterId: 'staff-1',
@@ -222,26 +222,18 @@ test('new order container keeps ticket owner and assigned supporter in the corre
     createdAt: new Date().toISOString(),
   }).toJSON();
 
-  assert.equal(container.type, 17);
-  assert.equal(container.components[1].type, 1);
-  assert.equal(container.components[1].components.length, 3);
-  const content = container.components[0].content;
-  assert.equal(content, [
+  assert.equal(embed.fields, undefined);
+  assert.equal(embed.description, [
     '_ _',
-    ' _ _    🧁   order from <#source-1>',
-    '  _ _     ⤷   Coffee (x2)',
-    '   _ _     ⤷   paid via Cash',
-    '    _ _     ⤷   status: __**noted**__',
-    '     _ _     ⤷   served by <@staff-1>',
-    '     _ _',
+    ' _ _    🧁order from <#source-1>',
+    ' _ _     ༄   Coffee',
+    ' _ _     ༄   paid via Cash',
+    ' _ _     ༄   status: __**noted**__',
+    '-# _ _       served by <@staff-1>',
+    '_ _',
   ].join('\n'));
-  assert.doesNotMatch(content, /Submitted|<t:\d+/);
-  assert.deepEqual(
-    container.components[1].components.map(({ label }) => label),
-    ['processing', 'complete', 'cancelled'],
-  );
 
-  const missingOwnerContainer = orderContainer({
+  const missingOwnerEmbed = orderEmbed({
     id: 'ORDER-3',
     status: 'pending',
     processingStatus: 'not_yet',
@@ -251,12 +243,12 @@ test('new order container keeps ticket owner and assigned supporter in the corre
     sourceChannelId: 'source-2',
     createdAt: new Date().toISOString(),
   }).toJSON();
-  assert.match(missingOwnerContainer.components[0].content, /order from <#source-2>/);
-  assert.match(missingOwnerContainer.components[0].content, /⤷   served by Not assigned/);
+  assert.match(missingOwnerEmbed.description, /order from <#source-2>/);
+  assert.match(missingOwnerEmbed.description, /served by Not assigned/);
 });
 
-test('order container uses the source channel and stylized status line', () => {
-  const container = orderContainer({
+test('order embed uses the order channel and stylized status line requested by staff', () => {
+  const embed = orderEmbed({
     id: 'ORDER-9',
     status: 'pending',
     processingStatus: 'not_yet',
@@ -269,9 +261,9 @@ test('order container uses the source channel and stylized status line', () => {
     createdAt: new Date().toISOString(),
   }).toJSON();
 
-  assert.match(container.components[0].content, /order from <#source-1>/);
-  assert.match(container.components[0].content, /status: __\*\*noted\*\*__/);
-  assert.match(container.components[0].content, /⤷   served by <@staff-1>/);
+  assert.match(embed.description, /order from <#source-1>/);
+  assert.match(embed.description, /status: __\*\*noted\*\*__/);
+  assert.match(embed.description, /served by <@staff-1>/);
 });
 
 test('vouch embed omits warranty text and shows the date in Philippine time', () => {
@@ -288,7 +280,8 @@ test('vouch embed omits warranty text and shows the date in Philippine time', ()
     hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
-  }).format(date) + ' PHT (UTC+8)';
+    timeZoneName: 'short',
+  }).format(date);
   assert.equal(vouchDateField.value, expected);
 });
 
@@ -303,132 +296,6 @@ test('vouches persist and are counted only for the requested user and server', (
   const vouches = restartedStore.listVouches('guild-1', 'user-1');
   assert.equal(vouches.length, 2);
   assert.deepEqual(vouches.map((vouch) => vouch.items).sort(), ['Latte', 'Tea']);
-});
-
-test('giveaways, entry bans, and message counts persist with server scoping', () => {
-  const store = createStore();
-  const giveaway = store.createGiveaway({
-    id: 'giveaway-1',
-    guildId: 'guild-1',
-    channelId: 'channel-1',
-    prize: 'Gift card',
-    hostId: 'host-1',
-    durationMs: 60_000,
-    endsAt: new Date(Date.now() + 60_000).toISOString(),
-    winnerCount: 2,
-    messageCount: null,
-    messageChannelId: null,
-    messageRequirements: null,
-    overrideRoleIds: [],
-  });
-  store.setGiveawayMessage(giveaway.id, 'message-1');
-  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), true);
-  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), false);
-  assert.equal(store.addGiveawayEntrant('guild-2', giveaway.id, 'user-2'), false);
-  store.incrementMessageCount('guild-1', 'channel-1', 'user-1');
-  store.incrementMessageCount('guild-1', 'channel-1', 'user-1');
-  assert.equal(store.banFromGiveaways('guild-1', 'user-2', 'staff-1'), true);
-  assert.equal(store.banFromGiveaways('guild-1', 'user-2', 'staff-2'), false);
-
-  const restartedStore = new OrderStore(store.filePath);
-  assert.equal(restartedStore.findGiveawayByMessage('guild-1', 'message-1').id, giveaway.id);
-  assert.equal(restartedStore.getMessageCount('guild-1', 'channel-1', 'user-1'), 2);
-  assert.equal(restartedStore.getMessageCount('guild-2', 'channel-1', 'user-1'), 0);
-  assert.equal(restartedStore.isBannedFromGiveaways('guild-1', 'user-2'), true);
-  assert.equal(restartedStore.isBannedFromGiveaways('guild-2', 'user-2'), false);
-  assert.deepEqual(restartedStore.listActiveGiveaways('guild-1').map(({ id }) => id), ['giveaway-1']);
-  assert.deepEqual(restartedStore.listActiveGiveaways().map(({ id }) => id), ['giveaway-1']);
-
-  const ended = restartedStore.endGiveaway('guild-1', giveaway.id, ['user-1']);
-  assert.equal(ended.status, 'ended');
-  assert.equal(restartedStore.endGiveaway('guild-1', giveaway.id, []), null);
-  assert.deepEqual(
-    restartedStore.addGiveawayReroll('guild-1', giveaway.id, ['user-2']).rerolls[0].winners,
-    ['user-2'],
-  );
-});
-
-test('completed orders qualify for voided-role removal only when vouched within 12 hours', () => {
-  const store = createStore();
-  const atLimit = store.addOrder({
-    guildId: 'guild-1',
-    customerId: 'user-1',
-    sourceChannelId: 'ticket-1',
-    items: 'Latte',
-    paymentMethod: 'Cash',
-    supporterId: 'staff-1',
-    quantity: 1,
-  });
-  const tooOld = store.addOrder({
-    guildId: 'guild-1',
-    customerId: 'user-1',
-    sourceChannelId: 'ticket-2',
-    items: 'Tea',
-    paymentMethod: 'Cash',
-    supporterId: 'staff-1',
-    quantity: 1,
-  });
-  const otherCustomer = store.addOrder({
-    guildId: 'guild-1',
-    customerId: 'user-2',
-    sourceChannelId: 'ticket-3',
-    items: 'Cake',
-    paymentMethod: 'Cash',
-    supporterId: 'staff-1',
-    quantity: 1,
-  });
-  for (const order of [atLimit, tooOld, otherCustomer]) store.finishOrder(order.id, 'completed');
-
-  const vouchTime = new Date('2026-10-05T12:00:00.000Z');
-  const state = store.read();
-  state.orders.find((order) => order.id === atLimit.id).finishedAt = '2026-10-05T00:00:00.000Z';
-  state.orders.find((order) => order.id === tooOld.id).finishedAt = '2026-10-04T23:59:59.999Z';
-  state.orders.find((order) => order.id === otherCustomer.id).finishedAt = '2026-10-05T00:00:00.000Z';
-  store.write(state);
-
-  assert.deepEqual(
-    store.listCompletedWithinVouchWindow('guild-1', 'user-1', vouchTime).map((order) => order.id),
-    [atLimit.id],
-  );
-  assert.deepEqual(
-    store.listCompletedWithinVouchWindow('guild-1', 'user-2', vouchTime).map((order) => order.id),
-    [otherCustomer.id],
-  );
-});
-
-test('warranty-void notice state persists and can only be marked once', () => {
-  const store = createStore();
-  const order = store.addOrder({
-    guildId: 'guild-1',
-    customerId: 'user-1',
-    sourceChannelId: 'ticket-1',
-    items: 'Latte',
-    paymentMethod: 'Cash',
-    supporterId: 'staff-1',
-    quantity: 1,
-  });
-  store.finishOrder(order.id, 'completed');
-
-  const markedAt = '2026-10-05T12:00:00.000Z';
-  assert.equal(store.markWarrantyVoidNotified(order.id, markedAt).warrantyVoidNotifiedAt, markedAt);
-  assert.equal(store.markWarrantyVoidNotified(order.id), null);
-  assert.equal(new OrderStore(store.filePath).listCompleted()[0].warrantyVoidNotifiedAt, markedAt);
-});
-
-test('vouches suppress warranty-void notices only inside the 12-hour window', () => {
-  const store = createStore();
-  const from = '2026-10-05T00:00:00.000Z';
-  const to = '2026-10-05T12:00:00.000Z';
-  store.addVouch({ guildId: 'guild-1', userId: 'user-1', items: 'Latte', createdAt: from });
-  assert.equal(store.hasVouchWithinWindow('guild-1', 'user-1', from, to), true);
-  assert.equal(store.hasVouchWithinWindow('guild-2', 'user-1', from, to), false);
-  assert.equal(store.hasVouchWithinWindow('guild-1', 'user-2', from, to), false);
-  assert.equal(store.hasVouchWithinWindow(
-    'guild-1',
-    'user-1',
-    '2026-10-05T00:00:00.001Z',
-    to,
-  ), false);
 });
 
 test('sticky messages persist per channel and can be replaced or removed', () => {

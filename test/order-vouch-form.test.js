@@ -16,10 +16,10 @@ test('order vouch form accepts the supported products and quantities', () => {
   });
   assert.deepEqual(parseOrderVouchForm({
     product: 'DEKOR',
-    quantity: '1000',
+    quantity: '9999',
     feedback: 'Good',
   }), {
-    value: { product: 'DEKOR', quantity: '1000', feedback: 'Good' },
+    value: { product: 'DEKOR', quantity: '9999', feedback: 'Good' },
   });
   assert.deepEqual(parseOrderVouchForm({
     product: 'SVBOOST',
@@ -38,14 +38,14 @@ test('order vouch form rejects unsupported products, invalid quantities, and bla
   }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' });
   assert.deepEqual(parseOrderVouchForm({
     product: 'ROBUX',
-    quantity: '1001',
+    quantity: '10000',
     feedback: 'Good',
-  }), { error: 'QUANTITY must be a whole number from 1 to 1000.' });
+  }), { error: 'QUANTITY must be a whole number from 1 to 9999.' });
   assert.deepEqual(parseOrderVouchForm({
     product: 'ROBUX',
     quantity: '1.5',
     feedback: 'Good',
-  }), { error: 'QUANTITY must be a whole number from 1 to 1000.' });
+  }), { error: 'QUANTITY must be a whole number from 1 to 9999.' });
   assert.deepEqual(parseOrderVouchForm({
     product: 'ROBUX',
     quantity: '1',

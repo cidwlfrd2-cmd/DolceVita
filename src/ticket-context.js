@@ -32,7 +32,7 @@ async function ticketProduct(channel) {
 async function ticketQuantity(channel) {
   if (!channel?.topic?.match(/(?:^|;)ticket-type:order(?:;|$)/)) return null;
   const topicQuantity = channel.topic.match(/(?:^|;)ticket-quantity:(\d+)(?:;|$)/)?.[1];
-  if (topicQuantity && Number(topicQuantity) >= 1 && Number(topicQuantity) <= 1000) {
+  if (topicQuantity && Number(topicQuantity) >= 1 && Number(topicQuantity) <= 9999) {
     return Number(topicQuantity);
   }
 
@@ -40,7 +40,7 @@ async function ticketQuantity(channel) {
   for (const message of messages.values()) {
     const orderTicket = message.embeds.find((embed) => embed.title === 'ORDER TICKET');
     const quantity = orderTicket?.fields.find((field) => field.name === 'QUANTITY')?.value;
-    if (/^\d{1,4}$/.test(quantity ?? '') && Number(quantity) >= 1 && Number(quantity) <= 1000) {
+    if (/^\d{1,4}$/.test(quantity ?? '') && Number(quantity) >= 1 && Number(quantity) <= 9999) {
       return Number(quantity);
     }
   }

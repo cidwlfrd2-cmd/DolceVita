@@ -8,8 +8,8 @@ function parseOrderVouchForm(form) {
   if (!PRODUCTS.has(product)) {
     return { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' };
   }
-  if (!/^\d{1,4}$/.test(quantity) || Number(quantity) < 1 || Number(quantity) > 1000) {
-    return { error: 'QUANTITY must be a whole number from 1 to 1000.' };
+  if (!/^\d{1,4}$/.test(quantity) || Number(quantity) < 1 || Number(quantity) > 9999) {
+    return { error: 'QUANTITY must be a whole number from 1 to 9999.' };
   }
   if (!feedback) {
     return { error: 'FEEDBACK cannot be blank.' };
