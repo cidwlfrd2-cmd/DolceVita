@@ -646,10 +646,11 @@ test('/openshop posts the supplied announcement in a V2 container', () => {
   assert.ok(commands.some((command) => command.name === 'openshop'));
 });
 
-test('/closeshop announcement matches the supplied V2 container text', () => {
+test('/closeshop announcement uses the supplied text in the styled V2 container layout', () => {
   const container = closeShopContainer().toJSON();
   assert.equal(container.type, 17);
-  assert.equal(container.components.length, 1);
+  assert.equal(container.accent_color, 0x3478c7);
+  assert.deepEqual(container.components.map(({ type }) => type), [10, 14, 10, 14, 10, 10, 10, 1]);
   assert.equal(container.components[0].content, [
     '_ _',
     ':candy:   **Dolce Vita is now closed**',
@@ -661,16 +662,25 @@ test('/closeshop announcement matches the supplied V2 container text', () => {
     '',
     'if you create a ticket while closed please wait for',
     'Dolce Vita Staff to open the shop and assist you.',
+  ].join('\n'));
+  assert.equal(container.components[2].content,
     '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
+  );
+  assert.equal(container.components[4].content, [
     '**what happened?**',
     '> we\'re busy/sleeping or at school/work, and improving our services',
     '> to serve y\'all better',
+  ].join('\n'));
+  assert.equal(container.components[5].content, [
     '**what can I do?**',
     '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
     '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
     '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
-    'thank you for patience and understanding. See you soon!!',
   ].join('\n'));
+  assert.equal(container.components[6].content, 'thank you for patience and understanding. See you soon!!');
+  assert.deepEqual(container.components[7].components.map(({ label, style, url }) => [label, style, url]), [
+    ['Announcement', 5, 'https://discord.com/channels/1555578509743755306/1555826478522835014'],
+  ]);
   assert.ok(commands.some((command) => command.name === 'closeshop'));
 });
 

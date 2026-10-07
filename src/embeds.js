@@ -83,6 +83,7 @@ function openShopContainer() {
 
 function closeShopContainer() {
   return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
       ':candy:   **Dolce Vita is now closed**',
@@ -94,16 +95,32 @@ function closeShopContainer() {
       '',
       'if you create a ticket while closed please wait for',
       'Dolce Vita Staff to open the shop and assist you.',
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**what happened?**',
       '> we\'re busy/sleeping or at school/work, and improving our services',
       '> to serve y\'all better',
+    ].join('\n')))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**what can I do?**',
       '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
       '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
       '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
+    ].join('\n')))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       'thank you for patience and understanding. See you soon!!',
-    ].join('\n')));
+    ))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Announcement')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://discord.com/channels/1555578509743755306/1555826478522835014'),
+    ));
 }
 
 function orderStatusEmbed(order) {
