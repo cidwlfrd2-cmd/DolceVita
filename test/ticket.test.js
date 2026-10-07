@@ -596,7 +596,7 @@ test('completed order Vouch modal requests product, feedback, and one or two pro
 test('/dmsuser message is formatted as a V2 container', () => {
   const container = dmsUserContainer('Dolce Vita', 'Your order is ready.').toJSON();
   assert.equal(container.type, 17);
-  assert.equal(container.accent_color, 0x3478c7);
+  assert.equal(container.accent_color, undefined);
   assert.equal(container.components[0].content, '## Message from Dolce Vita\n\nYour order is ready.');
 
   const command = commands.find((entry) => entry.name === 'dmsuser');
@@ -852,7 +852,7 @@ test('warranty-void notice is a V2 container with the required owner, item, and 
   }).toJSON();
 
   assert.equal(container.type, 17);
-  assert.equal(container.accent_color, 0xc94c4c);
+  assert.equal(container.accent_color, undefined);
   assert.equal(container.components[0].content, [
     '_ _',
     '_ _      ᨳଓ warranty voided',

@@ -16,7 +16,6 @@ const {
 const { orderStatusLabel } = require('./order-status');
 const { orderReference } = require('./order-reference');
 
-const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
 const SHOP_ANNOUNCEMENT_ROLE_ID = '1555603985694588940';
 
@@ -33,7 +32,6 @@ function orderContainer(order) {
   const item = order.items ?? order.item;
   const quantity = order.quantity ?? 1;
   return new ContainerBuilder()
-    .setAccentColor(COLORS[order.status])
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
       ` _ _    🧁   order from ${sourceChannel}`,
@@ -48,7 +46,6 @@ function orderContainer(order) {
 
 function dmsUserContainer(guildName, reply) {
   return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       `## Message from ${guildName}`,
       reply,
@@ -57,7 +54,6 @@ function dmsUserContainer(guildName, reply) {
 
 function openShopContainer() {
   return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
       '_ _',
@@ -82,7 +78,6 @@ function openShopContainer() {
 
 function closeShopContainer() {
   return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
       '_ _',
@@ -144,7 +139,6 @@ function warrantyVoidedContainer(order) {
   const userId = String(order.customerId ?? 'unknown');
   const product = `${order.ticketProduct ?? order.items ?? order.item ?? 'Unknown product'} (x${order.quantity ?? 1})`;
   return new ContainerBuilder()
-    .setAccentColor(0xc94c4c)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
       '_ _      ᨳଓ warranty voided',
@@ -164,7 +158,6 @@ function warrantyVoidedContainer(order) {
 
 function voidedRoleRemovedContainer(userId) {
   return new ContainerBuilder()
-    .setAccentColor(0x35a16b)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       `<@${userId}> voided role was removed because they submitted a vouch within 12 hours.`,
     ));
@@ -199,14 +192,12 @@ function giveawayContainer(giveaway, ended = false) {
     .setStyle(ButtonStyle.Success)
     .setDisabled(ended);
   return new ContainerBuilder()
-    .setAccentColor(ended ? 0x777777 : 0xe6a23c)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(details.join('\n')))
     .addActionRowComponents(new ActionRowBuilder().addComponents(joinButton));
 }
 
 function giveawayWinnersContainer(giveaway, winnerIds) {
   return new ContainerBuilder()
-    .setAccentColor(0x35a16b)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       `## 🎉 Giveaway Reroll: ${giveaway.prize}`,
       winnerIds.length
@@ -223,7 +214,6 @@ function multiplicationEmbed({ amountOne, amountTwo, product }) {
 
 function multiplicationContainer({ amountOne, amountTwo, product }) {
   return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder()
       .setContent(`**${amountOne} x ${amountTwo} = ${product}**`));
 }
@@ -258,7 +248,6 @@ function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
 
 function orderCompletionReminderContainer(orderId) {
   return new ContainerBuilder()
-    .setAccentColor(0x35a16b)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**REMINDERS : WARRANTY POLICY!!**',
       '› All completed orders come with a 12-hours warranty.',
@@ -272,7 +261,6 @@ function orderCompletionReminderContainer(orderId) {
 
 function orderVouchInstructionContainer() {
   return new ContainerBuilder()
-    .setAccentColor(0x35a16b)
     .addTextDisplayComponents(new TextDisplayBuilder()
       .setContent('TYPE `/vouch` TO VOUCH DOLCE VITA, THANKYOU!!'));
 }
@@ -548,7 +536,6 @@ function orderTicketTermsContainer(accepted = false) {
     .setStyle(ButtonStyle.Success)
     .setDisabled(accepted);
   return new ContainerBuilder()
-    .setAccentColor(0x3478c7)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       "🧁  ֹ **dolce vita's terms of service** 𓂅 ̼",
       'all sweeties bought are final and non-refundable.',
