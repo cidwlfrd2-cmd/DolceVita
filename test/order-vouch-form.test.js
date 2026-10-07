@@ -21,6 +21,13 @@ test('order vouch form accepts the supported products and quantities', () => {
   }), {
     value: { product: 'DEKOR', quantity: '1000', feedback: 'Good' },
   });
+  assert.deepEqual(parseOrderVouchForm({
+    product: 'SVBOOST',
+    quantity: '1',
+    feedback: 'Good',
+  }), {
+    value: { product: 'SVBOOST', quantity: '1', feedback: 'Good' },
+  });
 });
 
 test('order vouch form rejects unsupported products, invalid quantities, and blank feedback', () => {
@@ -28,7 +35,7 @@ test('order vouch form rejects unsupported products, invalid quantities, and bla
     product: 'OTHER',
     quantity: '1',
     feedback: 'Good',
-  }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, or ROBUX.' });
+  }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' });
   assert.deepEqual(parseOrderVouchForm({
     product: 'ROBUX',
     quantity: '1001',

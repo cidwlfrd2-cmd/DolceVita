@@ -80,7 +80,7 @@ test('order ticket modal requires the product, quantity, and payment method fiel
   );
   assert.deepEqual(
     modal.components.map((row) => row.components[0].placeholder),
-    ['DEKOR / GAMECREDITS / ROBUX', '1-1000', 'GCASH / BANKTRANS / PAYMAYA'],
+    ['ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX', '1-1000', 'GCASH / BANKTRANS / PAYMAYA'],
   );
 });
 
@@ -100,10 +100,17 @@ test('order ticket form accepts only listed products and payment methods with qu
     value: { product: 'DEKOR', quantity: '1000', paymentMethod: 'PAYMAYA' },
   });
   assert.deepEqual(parseOrderTicketForm({
+    product: ' svboost ',
+    quantity: '1',
+    paymentMethod: 'GCASH',
+  }), {
+    value: { product: 'SVBOOST', quantity: '1', paymentMethod: 'GCASH' },
+  });
+  assert.deepEqual(parseOrderTicketForm({
     product: 'OTHER',
     quantity: '3',
     paymentMethod: 'GCASH',
-  }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, or ROBUX.' });
+  }), { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' });
   assert.deepEqual(parseOrderTicketForm({
     product: 'ROBUX',
     quantity: '1001',
@@ -584,8 +591,8 @@ test('completed order Vouch modal requests product, feedback, and one or two pro
     'Proof',
   ]);
   const product = modal.components[0].component;
-  assert.equal(product.placeholder, 'DEKOR / GAMECREDITS / ROBUX');
-  assert.equal(modal.components[0].description, 'DEKOR / GAMECREDITS / ROBUX');
+  assert.equal(product.placeholder, 'ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX');
+  assert.equal(modal.components[0].description, 'Enter one: DEKOR / GAMECREDITS / SVBOOST / ROBUX');
   assert.equal(modal.components[1].component.style, 2);
   assert.deepEqual(
     [modal.components[2].component.min_values, modal.components[2].component.max_values, modal.components[2].component.required],
@@ -631,23 +638,31 @@ test('/openshop posts the supplied announcement in a V2 container', () => {
   assert.ok(commands.some((command) => command.name === 'openshop'));
 });
 
-test('/closeshop announcement uses red closed text and blue bold section headings', () => {
+test('/closeshop announcement matches the supplied V2 container text', () => {
   const container = closeShopContainer().toJSON();
-  const text = container.components
-    .filter(({ type }) => type === 10)
-    .map(({ content }) => content)
-    .join('\n');
   assert.equal(container.type, 17);
-  assert.ok(text.startsWith(`<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`));
-  assert.ok(text.includes('**Dolce Vita is now closed**'));
-  assert.ok(text.includes('**what happened?**'));
-  assert.ok(text.includes('**what can I do?**'));
-  assert.match(text, /\[Announcement\]\(https:\/\/discord\.com\/channels\/1555578509743755306\/1555826478522835014\)/);
-  assert.equal(container.components.filter(({ type }) => type === 14).length, 2);
-  const actionRow = container.components.find(({ type }) => type === 1);
-  assert.deepEqual(actionRow.components.map(({ label, style, url }) => [label, style, url]), [
-    ['Announcement', 5, 'https://discord.com/channels/1555578509743755306/1555826478522835014'],
-  ]);
+  assert.equal(container.components.length, 1);
+  assert.equal(container.components[0].content, [
+    '_ _',
+    ':candy:   **Dolce Vita is now closed**',
+    '',
+    'Thank you to everyone who supported Dolce Vita,',
+    'We appreciate all of you.',
+    '',
+    'we\'re currently closed but you still can create a ticket',
+    '',
+    'if you create a ticket while closed please wait for',
+    'Dolce Vita Staff to open the shop and assist you.',
+    '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
+    '**what happened?**',
+    '> we\'re busy/sleeping or at school/work, and improving our services',
+    '> to serve y\'all better',
+    '**what can I do?**',
+    '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+    '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
+    '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
+    'thank you for patience and understanding. See you soon!!',
+  ].join('\n'));
   assert.ok(commands.some((command) => command.name === 'closeshop'));
 });
 

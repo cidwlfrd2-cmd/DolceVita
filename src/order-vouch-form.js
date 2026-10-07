@@ -1,4 +1,4 @@
-const PRODUCTS = new Set(['DEKOR', 'GAMECREDITS', 'ROBUX']);
+const PRODUCTS = new Set(['DEKOR', 'GAMECREDITS', 'SVBOOST', 'ROBUX']);
 
 function parseOrderVouchForm(form) {
   const product = form.product.trim().toUpperCase();
@@ -6,7 +6,7 @@ function parseOrderVouchForm(form) {
   const feedback = form.feedback.trim();
 
   if (!PRODUCTS.has(product)) {
-    return { error: 'PRODUCT must be DEKOR, GAMECREDITS, or ROBUX.' };
+    return { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' };
   }
   if (!/^\d{1,4}$/.test(quantity) || Number(quantity) < 1 || Number(quantity) > 1000) {
     return { error: 'QUANTITY must be a whole number from 1 to 1000.' };

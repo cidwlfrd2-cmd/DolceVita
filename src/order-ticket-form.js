@@ -1,4 +1,4 @@
-const PRODUCTS = new Set(['DEKOR', 'GAMECREDITS', 'ROBUX']);
+const PRODUCTS = new Set(['DEKOR', 'GAMECREDITS', 'SVBOOST', 'ROBUX']);
 const PAYMENT_METHODS = new Set(['GCASH', 'BANKTRANS', 'PAYMAYA']);
 
 function parseOrderTicketForm(form) {
@@ -7,7 +7,7 @@ function parseOrderTicketForm(form) {
   const paymentMethod = form.paymentMethod.trim().toUpperCase();
 
   if (!PRODUCTS.has(product)) {
-    return { error: 'PRODUCT must be DEKOR, GAMECREDITS, or ROBUX.' };
+    return { error: 'PRODUCT must be DEKOR, GAMECREDITS, SVBOOST, or ROBUX.' };
   }
   if (!/^\d{1,4}$/.test(quantity) || Number(quantity) < 1 || Number(quantity) > 1000) {
     return { error: 'QUANTITY must be a whole number from 1 to 1000.' };

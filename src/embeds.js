@@ -79,43 +79,26 @@ function openShopContainer() {
 function closeShopContainer() {
   return new ContainerBuilder()
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
       '_ _',
-      '🔒  **Dolce Vita is now closed**',
+      ':candy:   **Dolce Vita is now closed**',
       '',
       'Thank you to everyone who supported Dolce Vita,',
       'We appreciate all of you.',
       '',
-      'we\'re currently closed and not taking any new orders.',
+      'we\'re currently closed but you still can create a ticket',
       '',
       'if you create a ticket while closed please wait for',
       'Dolce Vita Staff to open the shop and assist you.',
-    ].join('\n')))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
-    ))
-    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**what happened?**',
       '> we\'re busy/sleeping or at school/work, and improving our services',
       '> to serve y\'all better',
-    ].join('\n')))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '**what can I do?**',
       '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
       '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
       '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
-    ].join('\n')))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
       'thank you for patience and understanding. See you soon!!',
-    ))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel('Announcement')
-        .setStyle(ButtonStyle.Link)
-        .setURL('https://discord.com/channels/1555578509743755306/1555826478522835014'),
-    ));
+    ].join('\n')));
 }
 
 function orderStatusEmbed(order) {
@@ -281,13 +264,13 @@ function orderVouchModal(orderId) {
     .addLabelComponents(
       new LabelBuilder()
         .setLabel('Product')
-        .setDescription('DEKOR / GAMECREDITS / ROBUX')
+        .setDescription('Enter one: DEKOR / GAMECREDITS / SVBOOST / ROBUX')
         .setTextInputComponent(new TextInputBuilder()
           .setCustomId('order-vouch-product')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(20)
-          .setPlaceholder('DEKOR / GAMECREDITS / ROBUX')),
+          .setPlaceholder('ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX')),
       new LabelBuilder()
         .setLabel('Feedback')
         .setTextInputComponent(new TextInputBuilder()
@@ -431,7 +414,7 @@ function orderTicketModal() {
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(1024)
-          .setPlaceholder('DEKOR / GAMECREDITS / ROBUX'),
+          .setPlaceholder('ENTER ONE: DEKOR / GAMECREDITS / SVBOOST / ROBUX'),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
