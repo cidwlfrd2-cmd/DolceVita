@@ -20,6 +20,7 @@ const {
   multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
+  warrantyActivatedContainer,
   vouchPreviewButtons,
   paymentDetailsEmbed,
   paymentReminderButtons,
@@ -553,6 +554,36 @@ test('vouch embed matches the order-details layout and Philippine time zone', ()
     ['🔹 feedback', 'Great service!'],
     ['🔹 proof', 'See the attached proof image below.'],
   ]);
+});
+
+test('warranty activation DM is a V2 container with buyer, item, UTC+8 date, and proof image', () => {
+  const vouchedAt = new Date('2026-10-04T22:53:00Z');
+  const container = warrantyActivatedContainer('user-123', 'DEKOR (x2)', vouchedAt).toJSON();
+
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, undefined);
+  assert.equal(container.components[0].type, 10);
+  assert.equal(container.components[0].content, [
+    '<:blank:1557365898216611841>      <a:dolcheck:1557365949009502279>   **WARRANTY ACTIVATED *!***',
+    '        ⧽ applies only to nitro,premiumsubs,svboost',
+    '        ⧽ you may ignore this if you purchased discord items',
+    '        ⧽ present this if your item gets **revoked**',
+    '-# Deleting this message will automatically void the warranty',
+    '',
+    '════════════════════════',
+    '<:suchiblank:1406916898201010217>  ',
+    '<:suchiblank:1406916898201010217> 🍩   **order details**',
+    '',
+    '୭ ˚. ᵎᵎ **buyer: **',
+    '         ⧽ <@user-123>',
+    '୭ ˚. ᵎᵎ  item:',
+    '         ⧽ DEKOR (x2)',
+    '୭ ˚. ᵎᵎ  date vouched:',
+    '         ⧽ October 05, 2026 at 6:53 AM PHT (UTC+8)',
+    '୭ ˚. ᵎᵎ  proof:',
+  ].join('\n'));
+  assert.equal(container.components[1].type, 12);
+  assert.equal(container.components[1].items[0].media.url, 'attachment://vouch-proofs.png');
 });
 
 test('completed order reminder is a V2 container with a Vouch button and warranty policy', () => {

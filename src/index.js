@@ -30,6 +30,7 @@ const {
   multiplicationEmbed,
   multiplicationContainer,
   vouchEmbed,
+  warrantyActivatedContainer,
   vouchPreviewButtons,
   paymentDetailsEmbed,
   paymentReminderEmbed,
@@ -149,7 +150,6 @@ async function presentVouchPreview(interaction, {
   feedback,
   proofs,
   directMessage = false,
-  ticketOwnerDmId = null,
   ticketChannelId = null,
 }) {
   const settings = store.getSettings(guildId);
@@ -188,7 +188,6 @@ async function presentVouchPreview(interaction, {
     channelId: channel.id,
     items,
     vouchedAt,
-    ticketOwnerDmId,
     ticketChannelId,
     directMessage,
     embed,
@@ -333,19 +332,20 @@ async function handleVouchPreviewButton(interaction) {
         voidedRoleDmFailure = true;
       }
     }
-    let ownerDmSent = false;
-    if (preview.ticketOwnerDmId) {
-      try {
-        const owner = await client.users.fetch(preview.ticketOwnerDmId);
-        await owner.send({
-          embeds: [preview.embed],
-          files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
-          allowedMentions: { parse: [] },
-        });
-        ownerDmSent = true;
-      } catch (error) {
-        console.error(`Could not DM vouch ${preview.items} to ticket owner ${preview.ticketOwnerDmId}:`, error);
-      }
+    let warrantyDmSent = false;
+    let warrantyDmFailure = false;
+    try {
+      const user = await client.users.fetch(preview.userId);
+      await user.send({
+        components: [warrantyActivatedContainer(preview.userId, preview.items, vouchedAt)],
+        files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { users: [preview.userId] },
+      });
+      warrantyDmSent = true;
+    } catch (error) {
+      console.error(`Could not DM warranty activation to ${preview.userId}:`, error);
+      warrantyDmFailure = true;
     }
     let ticketClosureResult = { closed: false, failure: false };
     if (preview.ticketChannelId) {
@@ -368,14 +368,11 @@ async function handleVouchPreviewButton(interaction) {
         + (voidedRoleResult.removed ? ' Your voided role was removed.' : '')
         + (voidedRoleDmSent ? ' I also sent you a DM confirming the role removal.' : '')
         + (voidedRoleDmFailure ? ' I could not DM you the role-removal confirmation; please check your DM settings.' : '')
+        + (warrantyDmSent ? ' Your warranty details were sent to you by DM.' : '')
+        + (warrantyDmFailure ? ' I could not DM your warranty details; please check your DM settings.' : '')
         + (voidedRoleResult.roleFailure ? ' I could not remove the configured voided role.' : '')
         + (voidedRoleResult.failures.length
           ? ` I could not update the ticket channel ${voidedRoleResult.failures.join(', ')}.`
-          : '')
-        + (preview.ticketOwnerDmId
-          ? ownerDmSent
-            ? ' A copy was also sent to you by DM.'
-            : ' I could not send you a DM copy; please check your DM settings.'
           : ''),
       embeds: [],
       components: [],
@@ -1523,9 +1520,6 @@ async function handleCommand(interaction) {
       items,
       feedback,
       proofs,
-      ticketOwnerDmId: ticketOwnerId(interaction.channel) === interaction.user.id
-        ? interaction.user.id
-        : null,
       ticketChannelId: ticketOwnerId(interaction.channel) === interaction.user.id
         ? interaction.channelId
         : null,

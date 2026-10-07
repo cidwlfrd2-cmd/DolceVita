@@ -6,6 +6,8 @@ const {
   EmbedBuilder,
   FileUploadBuilder,
   LabelBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   ModalBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
@@ -231,8 +233,8 @@ function paymentReminderEmbed(serverIconUrl) {
   return embed;
 }
 
-function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
-  const date = new Intl.DateTimeFormat('en-US', {
+function formatVouchDate(vouchedAt) {
+  return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'long',
     day: '2-digit',
@@ -240,15 +242,44 @@ function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
     minute: '2-digit',
     timeZone: 'Asia/Manila',
   }).format(vouchedAt) + ' PHT (UTC+8)';
+}
+
+function vouchEmbed(user, items, feedback, vouchedAt = new Date()) {
   return new EmbedBuilder()
     .setColor(0x35a16b)
     .addFields(
       { name: '✨ • order details', value: `**buyer:** <@${user.id}>`, inline: false },
       { name: '🔹 item', value: items, inline: false },
-      { name: '🔹 date vouched', value: date, inline: false },
+      { name: '🔹 date vouched', value: formatVouchDate(vouchedAt), inline: false },
       { name: '🔹 feedback', value: feedback, inline: false },
       { name: '🔹 proof', value: 'See the attached proof image below.', inline: false },
     );
+}
+
+function warrantyActivatedContainer(userId, items, vouchedAt = new Date()) {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '<:blank:1557365898216611841>      <a:dolcheck:1557365949009502279>   **WARRANTY ACTIVATED *!***',
+      '        ⧽ applies only to nitro,premiumsubs,svboost',
+      '        ⧽ you may ignore this if you purchased discord items',
+      '        ⧽ present this if your item gets **revoked**',
+      '-# Deleting this message will automatically void the warranty',
+      '',
+      '════════════════════════',
+      '<:suchiblank:1406916898201010217>  ',
+      '<:suchiblank:1406916898201010217> 🍩   **order details**',
+      '',
+      '୭ ˚. ᵎᵎ **buyer: **',
+      `         ⧽ <@${userId}>`,
+      '୭ ˚. ᵎᵎ  item:',
+      `         ⧽ ${items}`,
+      '୭ ˚. ᵎᵎ  date vouched:',
+      `         ⧽ ${formatVouchDate(vouchedAt)}`,
+      '୭ ˚. ᵎᵎ  proof:',
+    ].join('\n')))
+    .addMediaGalleryComponents(new MediaGalleryBuilder().addItems(
+      new MediaGalleryItemBuilder().setURL('attachment://vouch-proofs.png'),
+    ));
 }
 
 function orderCompletionReminderContainer(orderId) {
@@ -652,6 +683,7 @@ module.exports = {
   multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
+  warrantyActivatedContainer,
   paymentDetailsEmbed,
   paymentReminderButtons,
   vouchPreviewButtons,
