@@ -66,14 +66,14 @@ function openShopContainer() {
       '_ _',
       ':candy:  **Dolce Vita is now __open__**',
       '',
-      'we never server rush orders.',
+      'we never serve rush orders.',
       'check our pricelist before ordering.',
       '',
-      '→  [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
-      '→  [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
-      '→  [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
-      '→  [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
-      '→  [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+      '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+      '→ [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+      '→ [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+      '→ [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+      '→ [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
     ].join('\n')))
     .addActionRowComponents(new ActionRowBuilder().addComponents(
       new ButtonBuilder()
