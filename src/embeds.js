@@ -66,11 +66,11 @@ function openShopContainer() {
       'we never server rush orders.',
       'check our pricelist before ordering.',
       '',
-      '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
-      ':suchiarrow: [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
-      ':suchiarrow: [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
-      ':suchiarrow: [Premmies] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
-      ':suchiarrow: [Gamecredits] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+      '→  [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+      '→  [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+      '→  [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+      '→  [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+      '→  [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
     ].join('\n')))
     .addActionRowComponents(new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -81,19 +81,17 @@ function openShopContainer() {
 }
 
 function closeShopContainer() {
-  const blue = '\u001b[1;34m';
-  const red = '\u001b[1;31m';
-  const reset = '\u001b[0m';
   return new ContainerBuilder()
     .setAccentColor(0x3478c7)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>\n\`\`\`ansi\n🔒  Dolce Vita is now ${red}closed${reset}\n\`\`\``,
-    ))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      'Thankyou to everyone who supported Dolce Vita,',
-      'We apppreciate all of you.',
+      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
+      '_ _',
+      '🔒  **Dolce Vita is now closed**',
       '',
-      `\`\`\`ansi\nwe're currently ${red}closed${reset} and not taking\nany new orders\n\`\`\``,
+      'Thank you to everyone who supported Dolce Vita,',
+      'We appreciate all of you.',
+      '',
+      'we\'re currently closed and not taking any new orders.',
       '',
       'if you create a ticket while closed please wait for',
       'Dolce Vita Staff to open the shop and assist you.',
@@ -104,12 +102,12 @@ function closeShopContainer() {
     ))
     .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `\`\`\`ansi\n${blue}𝘄𝗵𝗮𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱?${reset}\n\`\`\``,
-      "> we're busy/sleeping or at school/work, and improving our services",
-      "> to serve y'all better",
+      '**what happened?**',
+      '> we\'re busy/sleeping or at school/work, and improving our services',
+      '> to serve y\'all better',
     ].join('\n')))
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
-      `\`\`\`ansi\n${blue}𝘄𝗵𝗮𝘁 𝗰𝗮𝗻 𝗱𝗼?${reset}\n\`\`\``,
+      '**what can I do?**',
       '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
       '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
       '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',

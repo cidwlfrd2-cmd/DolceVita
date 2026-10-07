@@ -618,11 +618,11 @@ test('/openshop posts the supplied announcement in a V2 container', () => {
     'we never server rush orders.',
     'check our pricelist before ordering.',
     '',
-    '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
-    ':suchiarrow: [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
-    ':suchiarrow: [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
-    ':suchiarrow: [Premmies] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
-    ':suchiarrow: [Gamecredits] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+    '→  [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+    '→  [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+    '→  [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+    '→  [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+    '→  [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
   ].join('\n'));
   assert.equal(container.type, 17);
   assert.deepEqual(container.components[1].components.map(({ label, style, url }) => [label, style, url]), [
@@ -639,9 +639,9 @@ test('/closeshop announcement uses red closed text and blue bold section heading
     .join('\n');
   assert.equal(container.type, 17);
   assert.ok(text.startsWith(`<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`));
-  assert.ok(text.includes('\u001b[1;31mclosed\u001b[0m'));
-  assert.ok(text.includes('\u001b[1;34m𝘄𝗵𝗮𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱?\u001b[0m'));
-  assert.ok(text.includes('\u001b[1;34m𝘄𝗵𝗮𝘁 𝗰𝗮𝗻 𝗱𝗼?\u001b[0m'));
+  assert.ok(text.includes('**Dolce Vita is now closed**'));
+  assert.ok(text.includes('**what happened?**'));
+  assert.ok(text.includes('**what can I do?**'));
   assert.match(text, /\[Announcement\]\(https:\/\/discord\.com\/channels\/1555578509743755306\/1555826478522835014\)/);
   assert.equal(container.components.filter(({ type }) => type === 14).length, 2);
   const actionRow = container.components.find(({ type }) => type === 1);
