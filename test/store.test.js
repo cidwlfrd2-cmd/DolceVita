@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { OrderStore } = require('../src/store');
-const { orderButtons, orderEmbed, orderStatusEmbed, queueEmbed } = require('../src/embeds');
+const { orderButtons, orderContainer, orderStatusEmbed, queueEmbed } = require('../src/embeds');
 const { orderReference } = require('../src/order-reference');
 const { orderStatusLabel } = require('../src/order-status');
 
@@ -157,7 +157,7 @@ test('ticket product is displayed as the order reference while buttons retain th
   assert.match(queueEmbed([order]).toJSON().fields[0].name, /#GAMECREDITS/);
 });
 
-test('completed and cancelled statuses override processing in the order embed', () => {
+test('completed and cancelled statuses override processing in the order container', () => {
   const order = {
     id: 'ORDER-1',
     status: 'completed',
@@ -171,10 +171,10 @@ test('completed and cancelled statuses override processing in the order embed', 
     createdAt: new Date().toISOString(),
   };
 
-  const completedEmbed = orderEmbed(order).toJSON();
-  assert.match(completedEmbed.description, /status: __\*\*done\*\*__/);
-  const cancelledEmbed = orderEmbed({ ...order, status: 'cancelled' }).toJSON();
-  assert.match(cancelledEmbed.description, /status: __\*\*cancelled\*\*__/);
+  const completedContainer = orderContainer(order).toJSON();
+  assert.match(completedContainer.components[0].content, /status: __\*\*done\*\*__/);
+  const cancelledContainer = orderContainer({ ...order, status: 'cancelled' }).toJSON();
+  assert.match(cancelledContainer.components[0].content, /status: __\*\*cancelled\*\*__/);
 });
 
 test('source-channel status labels reflect processing, complete, and cancelled transitions', () => {
@@ -208,8 +208,8 @@ test('order status notification embed includes the order status and details', ()
   );
 });
 
-test('new order embed keeps ticket owner and assigned supporter in the correct labels', () => {
-  const embed = orderEmbed({
+test('new order container uses the V2 styling and displays the ticket owner, quantity, and supporter', () => {
+  const container = orderContainer({
     id: 'ORDER-2',
     status: 'pending',
     processingStatus: 'not_yet',
@@ -222,18 +222,20 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
     createdAt: new Date().toISOString(),
   }).toJSON();
 
-  assert.equal(embed.fields, undefined);
-  assert.equal(embed.description, [
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, undefined);
+  assert.deepEqual(container.components.map(({ type }) => type), [10, 1]);
+  assert.equal(container.components[0].content, [
     '_ _',
-    ' _ _    🧁order from <#source-1>',
-    ' _ _     ༄   Coffee',
-    ' _ _     ༄   paid via Cash',
-    ' _ _     ༄   status: __**noted**__',
-    '-# _ _       served by <@staff-1>',
-    '_ _',
+    ' _ _    🧁   order from <#source-1>',
+    '  _ _     ⤷   Coffee (x1)',
+    '   _ _     ⤷   paid via Cash',
+    '    _ _     ⤷   status: __**noted**__',
+    '     _ _     ⤷   served by <@staff-1>',
+    '     _ _',
   ].join('\n'));
 
-  const missingOwnerEmbed = orderEmbed({
+  const missingSupporter = orderContainer({
     id: 'ORDER-3',
     status: 'pending',
     processingStatus: 'not_yet',
@@ -241,29 +243,29 @@ test('new order embed keeps ticket owner and assigned supporter in the correct l
     quantity: 2,
     paymentMethod: 'GCASH',
     sourceChannelId: 'source-2',
-    createdAt: new Date().toISOString(),
   }).toJSON();
-  assert.match(missingOwnerEmbed.description, /order from <#source-2>/);
-  assert.match(missingOwnerEmbed.description, /served by Not assigned/);
+  assert.match(missingSupporter.components[0].content, /order from <#source-2>/);
+  assert.match(missingSupporter.components[0].content, /Tea \(x2\)/);
+  assert.match(missingSupporter.components[0].content, /served by Not assigned/);
 });
 
-test('order embed uses the order channel and stylized status line requested by staff', () => {
-  const embed = orderEmbed({
+test('order container includes item quantity and status styling', () => {
+  const container = orderContainer({
     id: 'ORDER-9',
     status: 'pending',
-    processingStatus: 'not_yet',
+    processingStatus: 'processing',
     items: 'Coffee',
-    quantity: 1,
+    quantity: 7,
     customerId: 'customer-1',
     paymentMethod: 'Cash',
     supporterId: 'staff-1',
     sourceChannelId: 'source-1',
-    createdAt: new Date().toISOString(),
   }).toJSON();
 
-  assert.match(embed.description, /order from <#source-1>/);
-  assert.match(embed.description, /status: __\*\*noted\*\*__/);
-  assert.match(embed.description, /served by <@staff-1>/);
+  assert.match(container.components[0].content, /order from <#source-1>/);
+  assert.match(container.components[0].content, /Coffee \(x7\)/);
+  assert.match(container.components[0].content, /status: __\*\*processing\*\*__/);
+  assert.match(container.components[0].content, /served by <@staff-1>/);
 });
 
 test('vouch embed omits warranty text and shows the date in Philippine time', () => {

@@ -6,13 +6,14 @@ const {
   EmbedBuilder,
   GatewayIntentBits,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { OrderStore } = require('./store');
 const {
   orderButtons,
-  orderEmbed,
+  orderContainer,
   orderStatusEmbed,
   orderCompletionReminderEmbed,
   multiplicationEmbed,
@@ -451,8 +452,8 @@ async function refreshOrderMessage(order) {
   const channel = await client.channels.fetch(order.channelId);
   const message = await channel.messages.fetch(order.messageId);
   await message.edit({
-    embeds: [orderEmbed(order)],
-    components: [orderButtons(order)],
+    components: [orderContainer(order)],
+    flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   });
 }
@@ -759,8 +760,8 @@ async function handleCommand(interaction) {
     });
     const channel = await client.channels.fetch(orderChannelId);
     const message = await channel.send({
-      embeds: [orderEmbed(order)],
-      components: [orderButtons(order)],
+      components: [orderContainer(order)],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
     store.setOrderMessage(order.id, channel.id, message.id);
@@ -1126,8 +1127,8 @@ async function handleButton(interaction) {
     return interaction.reply({ content: 'This order is no longer active.', ephemeral: true });
   }
   await interaction.update({
-    embeds: [orderEmbed(order)],
-    components: [orderButtons(order)],
+    components: [orderContainer(order)],
+    flags: MessageFlags.IsComponentsV2,
     allowedMentions: { parse: [] },
   });
   const statusEmbed = orderStatusEmbed(order);

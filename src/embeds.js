@@ -2,41 +2,42 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   EmbedBuilder,
+  MessageFlags,
   ModalBuilder,
+  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
 const { orderStatusLabel } = require('./order-status');
 const { orderReference } = require('./order-reference');
 
-const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
 
-function orderEmbed(order) {
+function orderContainer(order) {
   const status = order.status === 'completed'
     ? 'done'
     : order.status === 'cancelled'
       ? 'cancelled'
-        : order.status === 'expired'
-          ? 'expired'
-          : order.processingStatus === 'processing' ? 'processing' : 'noted';
+      : order.status === 'expired'
+        ? 'expired'
+        : order.processingStatus === 'processing' ? 'processing' : 'noted';
   const sourceChannel = order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
-  const embed = new EmbedBuilder()
-    .setColor(COLORS[order.status])
-    .setDescription([
+  const item = order.items ?? order.item;
+  const quantity = order.quantity ?? 1;
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
-      ` _ _    🧁order from ${sourceChannel}`,
-      ` _ _     ༄   ${order.items ?? order.item}`,
-      ` _ _     ༄   paid via ${order.paymentMethod ?? 'Not specified'}`,
-      ` _ _     ༄   status: __**${status}**__`,
-      `-# _ _       served by ${servedBy}`,
-      '_ _',
-    ].join('\n'));
-
-  embed.setTimestamp(new Date(order.createdAt));
-  return embed;
+      ` _ _    🧁   order from ${sourceChannel}`,
+      `  _ _     ⤷   ${item} (x${quantity})`,
+      `   _ _     ⤷   paid via ${order.paymentMethod ?? 'Not specified'}`,
+      `    _ _     ⤷   status: __**${status}**__`,
+      `     _ _     ⤷   served by ${servedBy}`,
+      '     _ _',
+    ].join('\n')))
+    .addActionRowComponents(orderButtons(order));
 }
 
 function orderStatusEmbed(order) {
@@ -433,7 +434,7 @@ function ticketTranscriptEmbed({
 
 module.exports = {
   orderButtons,
-  orderEmbed,
+  orderContainer,
   orderStatusEmbed,
   voidedOrderEmbed,
   orderCompletionReminderEmbed,
