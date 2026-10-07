@@ -564,11 +564,13 @@ test('warranty activation DM is a V2 container with buyer, item, UTC+8 date, and
   assert.equal(container.accent_color, undefined);
   assert.equal(container.components[0].type, 10);
   assert.equal(container.components[0].content, [
-    '<:blank:1557365898216611841>      <a:dolcheck:1557365949009502279>   **WARRANTY ACTIVATED *!***',
-    '        ⧽ applies only to nitro,premiumsubs,svboost',
+    '<:blank:1557365898216611841>        <a:vitacheck:1557378165457027072>    **WARRANTY ACTIVATED *!***',
+    '_ _',
+    '        ⧽ applies only to (nitro, premium subs, svboosts)',
     '        ⧽ you may ignore this if you purchased discord items',
     '        ⧽ present this if your item gets **revoked**',
-    '-# Deleting this message will automatically void the warranty',
+    '_ _',
+    '-# _ _     Deleting this message will automatically void the warranty',
     '',
     '════════════════════════',
     '<:suchiblank:1406916898201010217>  ',
