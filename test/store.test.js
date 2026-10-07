@@ -214,7 +214,7 @@ test('new order container keeps ticket owner and assigned supporter in the corre
     status: 'pending',
     processingStatus: 'not_yet',
     items: 'Coffee',
-    quantity: 1,
+    quantity: 2,
     customerId: 'customer-1',
     paymentMethod: 'Cash',
     supporterId: 'staff-1',
@@ -229,7 +229,7 @@ test('new order container keeps ticket owner and assigned supporter in the corre
   assert.equal(content, [
     '_ _',
     ' _ _    🧁   order from <#source-1>',
-    '  _ _     ⤷   Coffee',
+    '  _ _     ⤷   Coffee (x2)',
     '   _ _     ⤷   paid via Cash',
     '    _ _     ⤷   status: __**noted**__',
     '     _ _     ⤷   served by <@staff-1>',

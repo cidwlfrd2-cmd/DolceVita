@@ -27,6 +27,10 @@ const {
   orderVouchInstructionContainer,
   orderVouchButton,
   orderVouchModal,
+  SHOP_ANNOUNCEMENT_ROLE_ID,
+  dmsUserContainer,
+  openShopContainer,
+  closeShopContainer,
   orderTicketTermsContainer,
 } = require('../src/embeds');
 const commands = require('../src/commands');
@@ -37,6 +41,7 @@ const {
   ticketTermsAccepted,
   ticketCustomerId,
   ticketProduct,
+  ticketQuantity,
 } = require('../src/ticket-context');
 const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
@@ -376,6 +381,25 @@ test('order ticket product comes from the topic or the original ticket embed', a
   assert.equal(await ticketProduct({ topic: 'ticket-owner:123;ticket-type:report' }), null);
 });
 
+test('order ticket quantity comes from the topic or the original ticket embed', async () => {
+  assert.equal(await ticketQuantity({
+    topic: 'ticket-owner:123;ticket-type:order;ticket-quantity:7',
+  }), 7);
+
+  const messages = new Map([['message-1', {
+    embeds: [{
+      title: 'ORDER TICKET',
+      fields: [{ name: 'QUANTITY', value: '12' }],
+    }],
+  }]]);
+  assert.equal(await ticketQuantity({
+    topic: 'ticket-owner:123;ticket-type:order',
+    messages: { fetch: async () => messages },
+  }), 12);
+
+  assert.equal(await ticketQuantity({ topic: 'ticket-owner:123;ticket-type:report' }), null);
+});
+
 test('ticket creation finds existing tickets and serializes simultaneous submissions', async () => {
   const existingTicket = { id: 'ticket-1', topic: 'ticket-owner:123;ticket-type:report' };
   assert.equal(findActiveTicket(new Map([[existingTicket.id, existingTicket]]), '123'), existingTicket);
@@ -549,30 +573,82 @@ test('completed order channel vouch instruction is a V2 container', () => {
   assert.equal(container.components[0].content, 'TYPE `/vouch` TO VOUCH DOLCE VITA, THANKYOU!!');
 });
 
-test('completed order Vouch modal requests validated product, quantity, feedback, and one or two proofs', () => {
+test('completed order Vouch modal requests product, feedback, and one or two proofs', () => {
   const modal = orderVouchModal('ORDER-1').toJSON();
 
   assert.equal(modal.custom_id, 'order-vouch-form:ORDER-1');
   assert.equal(modal.title, 'VOUCH FORM');
   assert.deepEqual(modal.components.map(({ label }) => label), [
     'Product',
-    'Quantity',
     'Feedback',
     'Proof',
   ]);
   const product = modal.components[0].component;
   assert.equal(product.placeholder, 'DEKOR / GAMECREDITS / ROBUX');
   assert.equal(modal.components[0].description, 'DEKOR / GAMECREDITS / ROBUX');
-  assert.equal(modal.components[1].component.placeholder, '1-1000');
-  assert.equal(modal.components[2].component.style, 2);
+  assert.equal(modal.components[1].component.style, 2);
   assert.deepEqual(
-    {
-      minValues: modal.components[3].component.min_values,
-      maxValues: modal.components[3].component.max_values,
-      required: modal.components[3].component.required,
-    },
-    { minValues: 1, maxValues: 2, required: true },
+    [modal.components[2].component.min_values, modal.components[2].component.max_values, modal.components[2].component.required],
+    [1, 2, true],
   );
+});
+
+test('/dmsuser message is formatted as a V2 container', () => {
+  const container = dmsUserContainer('Dolce Vita', 'Your order is ready.').toJSON();
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, 0x3478c7);
+  assert.equal(container.components[0].content, '## Message from Dolce Vita\n\nYour order is ready.');
+
+  const command = commands.find((entry) => entry.name === 'dmsuser');
+  assert.ok(command);
+  assert.deepEqual(
+    command.options.map(({ name, required }) => [name, required]),
+    [['user', true], ['reply', true]],
+  );
+});
+
+test('/openshop posts the supplied announcement in a V2 container', () => {
+  const container = openShopContainer().toJSON();
+  const content = container.components[0].content;
+  assert.equal(content, [
+    `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
+    '_ _',
+    ':candy:  **Dolce Vita is now __open__**',
+    '',
+    'we never server rush orders.',
+    'check our pricelist before ordering.',
+    '',
+    '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+    ':suchiarrow: [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+    ':suchiarrow: [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+    ':suchiarrow: [Premmies] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+    ':suchiarrow: [Gamecredits] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+  ].join('\n'));
+  assert.equal(container.type, 17);
+  assert.deepEqual(container.components[1].components.map(({ label, style, url }) => [label, style, url]), [
+    ['Order Here', 5, 'https://discord.com/channels/1555578509743755306/1555625940111855697'],
+  ]);
+  assert.ok(commands.some((command) => command.name === 'openshop'));
+});
+
+test('/closeshop announcement uses red closed text and blue bold section headings', () => {
+  const container = closeShopContainer().toJSON();
+  const text = container.components
+    .filter(({ type }) => type === 10)
+    .map(({ content }) => content)
+    .join('\n');
+  assert.equal(container.type, 17);
+  assert.ok(text.startsWith(`<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`));
+  assert.ok(text.includes('\u001b[1;31mclosed\u001b[0m'));
+  assert.ok(text.includes('\u001b[1;34m𝘄𝗵𝗮𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱?\u001b[0m'));
+  assert.ok(text.includes('\u001b[1;34m𝘄𝗵𝗮𝘁 𝗰𝗮𝗻 𝗱𝗼?\u001b[0m'));
+  assert.match(text, /\[Announcement\]\(https:\/\/discord\.com\/channels\/1555578509743755306\/1555826478522835014\)/);
+  assert.equal(container.components.filter(({ type }) => type === 14).length, 2);
+  const actionRow = container.components.find(({ type }) => type === 1);
+  assert.deepEqual(actionRow.components.map(({ label, style, url }) => [label, style, url]), [
+    ['Announcement', 5, 'https://discord.com/channels/1555578509743755306/1555826478522835014'],
+  ]);
+  assert.ok(commands.some((command) => command.name === 'closeshop'));
 });
 
 test('payment details embed includes GCash instructions and the attached payment image', () => {
@@ -772,6 +848,7 @@ test('warranty-void notice is a V2 container with the required owner, item, and 
     customerId: '123456789012345678',
     ticketProduct: 'GAMECREDITS',
     items: 'Different order description',
+    quantity: 7,
   }).toJSON();
 
   assert.equal(container.type, 17);
@@ -785,7 +862,7 @@ test('warranty-void notice is a V2 container with the required owner, item, and 
     '_ _        ⧽ <@123456789012345678> | 123456789012345678',
     '_ _',
     '_ _       **item**',
-    '_ _        ⧽ GAMECREDITS',
+    '_ _        ⧽ GAMECREDITS (x7)',
     '_ _',
     '_ _       **reason**',
     '_ _        ⧽ No Vouch = Warranty Voided',
@@ -837,6 +914,18 @@ test('ticket transcript shows unclaimed tickets in the closure summary', () => {
   }).toJSON();
 
   assert.equal(embed.fields.find(({ name }) => name === '🟣 Claimed By').value, 'Unclaimed');
+});
+
+test('automatic warranty-void closure reason appears in the ticket transcript', () => {
+  const embed = ticketTranscriptEmbed({
+    channelId: '282',
+    createdAt: new Date('2026-10-04T08:47:00Z'),
+    ownerId: 'ticket-owner',
+    closedById: 'bot-1',
+    reason: 'Voided No Vouch',
+  }).toJSON();
+
+  assert.equal(embed.fields.find(({ name }) => name === '❔ Reason').value, 'Voided No Vouch');
 });
 
 test('ticket transcript text preserves message order, content, and attachment links', () => {

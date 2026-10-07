@@ -12,17 +12,20 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 
 ## Commands
 
-- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only. Its Components V2 container shows the source channel, items, payment method, status, and the assigned supporter, with **processing**, **done**, and **cancelled** buttons inside the container. The customer is the ticket owner when `/order` is run inside a ticket; otherwise it is the staff member who submitted the order. New orders show **noted** until updated.
+- `/order items:<items> payment_method:<method> supporter:<staff member> quantity:<optional>` is staff-only. Its Components V2 container shows the source channel, items with quantity, payment method, status, and the assigned supporter, with **processing**, **done**, and **cancelled** buttons inside the container. When submitted inside an order ticket, the ticket form's quantity is used. The customer is the ticket owner when `/order` is run inside a ticket; otherwise it is the staff member who submitted the order. New orders show **noted** until updated.
 - Orders remain active for 48 hours after submission. Orders that are still pending or claimed at the end of that period expire and can no longer be processed, completed, or cancelled.
 - When an order is marked **Processing**, **Complete**, or **Cancelled**, the bot sends a status-update embed both to the channel where `/order` was run and by DM to the order submitter.
-- When an order is marked **Complete**, the bot also sends the warranty-policy reminder embed to the original order channel and the customer by DM.
-- The role configured with `/set voided_role` is assigned to the order customer when an order is completed. It is removed if they submit a vouch within 12 hours, and their order ticket is notified. If they do not vouch within 12 hours, the warranty-void notice is posted in the channel configured with `/voidedchannel`.
+- When an order is marked **Complete**, the bot also sends the warranty-policy reminder embed to the original order channel and the customer by DM. The DM's Vouch form uses the order quantity and includes it beside the item.
+- The role configured with `/set voided_role` is assigned to the order customer when an order is completed. It is removed if they submit a vouch within 12 hours, and their order ticket is notified. If they do not vouch within 12 hours, the warranty-void notice is posted in the channel configured with `/voidedchannel`, showing the item and ticket quantity, and the order ticket is automatically closed with the transcript reason `Voided No Vouch`.
 - `/queue` publicly displays active waiting and claimed orders.
 - `/claim` lets authorized staff claim the oldest waiting order.
 - `/payment` lets authorized staff send the payment reminder in an active ticket.
 - `/solving amount_one:<number> amount_two:<number>` multiplies two numbers and displays the result.
 - `,calc <number>*<number>` (for example, `,calc 5*5`) sends the result as `5 x 5 = 25` in a Discord Components V2 container, then deletes the command message. The bot needs the **Manage Messages** permission in that channel. The `/solving` slash command remains available.
 - `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
+- `/openshop` posts the shop-open announcement as a Discord Components V2 container in the current channel.
+- `/closeshop` posts the shop-closed announcement as a Discord Components V2 container in the current channel, with red “closed” text and blue bold section headings.
+- `/dmsuser user:@user reply:<message>` lets authorized staff DM a user in a Discord Components V2 container. Mentions in the reply do not trigger notifications.
 - `/set vouch channel:#vouches` lets an administrator choose where vouches are posted.
 - `/set voided_role role:<role>` configures the role assigned to the order customer when an order is completed. A vouch submitted within 12 hours removes the role and posts a notice in the order ticket.
 - `/voidedchannel channel:#channel` configures where the warranty-void notice is sent after 12 hours without a vouch.

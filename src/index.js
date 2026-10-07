@@ -14,6 +14,10 @@ const { OrderStore, VOUCH_WINDOW_MS } = require('./store');
 const {
   orderButtons,
   orderContainer,
+  SHOP_ANNOUNCEMENT_ROLE_ID,
+  dmsUserContainer,
+  openShopContainer,
+  closeShopContainer,
   orderStatusEmbed,
   warrantyVoidedContainer,
   voidedRoleRemovedContainer,
@@ -52,6 +56,7 @@ const {
   ticketTermsAccepted,
   ticketCustomerId,
   ticketProduct,
+  ticketQuantity,
 } = require('./ticket-context');
 const { orderReference } = require('./order-reference');
 const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
@@ -221,7 +226,7 @@ async function handleOrderVouchModal(interaction) {
   }
   const form = parseOrderVouchForm({
     product: interaction.fields.getTextInputValue('order-vouch-product'),
-    quantity: interaction.fields.getTextInputValue('order-vouch-quantity'),
+    quantity: String(order.quantity ?? 1),
     feedback: interaction.fields.getTextInputValue('order-vouch-feedback'),
   });
   if (form.error) {
@@ -239,7 +244,7 @@ async function handleOrderVouchModal(interaction) {
   await interaction.deferReply({ ephemeral: true });
   return presentVouchPreview(interaction, {
     guildId: order.guildId,
-    items: `${form.value.product} x ${form.value.quantity}`,
+    items: `${form.value.product} (x${form.value.quantity})`,
     feedback: form.value.feedback,
     proofs,
     directMessage: true,
@@ -577,6 +582,11 @@ function scheduleWarrantyVoidNotice(order, delay = null) {
         allowedMentions: { users: [currentOrder.customerId] },
       });
       store.markWarrantyVoidNotified(currentOrder.id);
+      try {
+        await closeVoidedOrderTicket(currentOrder);
+      } catch (error) {
+        console.error(`Could not automatically close order ticket for voided order ${currentOrder.id}:`, error);
+      }
     } catch (error) {
       console.error(`Could not send warranty-void notice for order ${currentOrder.id}:`, error);
       scheduleWarrantyVoidNotice(currentOrder, 5 * 60 * 1000);
@@ -760,6 +770,29 @@ async function closeTicketForVouch(guildId, channelId, userId) {
     reason: 'Vouch submitted',
   });
   return { closed: true, failure: false };
+}
+
+async function closeVoidedOrderTicket(order) {
+  if (!order.sourceChannelId) return;
+  const channel = await client.channels.fetch(order.sourceChannelId);
+  if (!channel
+    || channel.guildId !== order.guildId
+    || !channel.isTextBased()
+    || typeof channel.delete !== 'function'
+    || !channel.topic?.match(/(?:^|;)ticket-type:order(?:;|$)/)) {
+    return;
+  }
+  if (ticketOwnerId(channel) !== order.customerId) {
+    throw new Error(`Order ticket ${channel.id} is not owned by order customer ${order.customerId}.`);
+  }
+  await archiveAndDeleteTicket({
+    guildId: order.guildId,
+    channel,
+    ownerId: order.customerId,
+    closedById: client.user.id,
+    closedByTag: client.user.tag,
+    reason: 'Voided No Vouch',
+  });
 }
 
 function isOrderStaff(interaction) {
@@ -1163,7 +1196,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       ),
       type: ChannelType.GuildText,
       ...(parent ? { parent: parent.id } : {}),
-      topic: `ticket-owner:${interaction.user.id};ticket-type:${type}${type === 'order' ? ';ticket-terms-required' : ''}${orderForm ? `;ticket-product:${orderForm.product}` : ''}`,
+      topic: `ticket-owner:${interaction.user.id};ticket-type:${type}${type === 'order' ? ';ticket-terms-required' : ''}${orderForm ? `;ticket-product:${orderForm.product};ticket-quantity:${orderForm.quantity}` : ''}`,
       permissionOverwrites,
       reason: `${type} ticket opened by ${interaction.user.tag}`,
     });
@@ -1321,7 +1354,9 @@ async function handleCommand(interaction) {
       items: interaction.options.getString('items', true),
       paymentMethod: interaction.options.getString('payment_method', true),
       supporterId: interaction.options.getUser('supporter', true).id,
-      quantity: interaction.options.getInteger('quantity') ?? 1,
+      quantity: (await ticketQuantity(interaction.channel))
+        ?? interaction.options.getInteger('quantity')
+        ?? 1,
       ticketProduct: await ticketProduct(interaction.channel),
     });
     const channel = await client.channels.fetch(orderChannelId);
@@ -1401,6 +1436,61 @@ async function handleCommand(interaction) {
       allowedMentions: { parse: [] },
     });
     return interaction.reply({ content: `Message posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'openshop') {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'You do not have permission to post the shop-open announcement.', ephemeral: true });
+    }
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+      return interaction.reply({ content: 'Use `/openshop` in a text channel where the bot can send messages.', ephemeral: true });
+    }
+    await channel.send({
+      components: [openShopContainer()],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { roles: [SHOP_ANNOUNCEMENT_ROLE_ID] },
+    });
+    return interaction.reply({ content: `Shop-open announcement posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'closeshop') {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'You do not have permission to post the shop-closed announcement.', ephemeral: true });
+    }
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+      return interaction.reply({ content: 'Use `/closeshop` in a text channel where the bot can send messages.', ephemeral: true });
+    }
+    await channel.send({
+      components: [closeShopContainer()],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { roles: [SHOP_ANNOUNCEMENT_ROLE_ID] },
+    });
+    return interaction.reply({ content: `Shop-closed announcement posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'dmsuser') {
+    if (!canManageGiveaways(interaction)) {
+      return interaction.reply({ content: 'Only the server owner and users with the configured `/setadmin` or `/setowner` role can send DMs as the bot.', ephemeral: true });
+    }
+    const user = interaction.options.getUser('user', true);
+    const reply = interaction.options.getString('reply', true).trim();
+    if (!reply) {
+      return interaction.reply({ content: 'The reply cannot be blank.', ephemeral: true });
+    }
+    await interaction.deferReply({ ephemeral: true });
+    try {
+      await user.send({
+        components: [dmsUserContainer(interaction.guild.name, reply)],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
+    } catch (error) {
+      console.error(`Could not send /dmsuser message to user ${user.id}:`, error);
+      return interaction.editReply(`Could not DM ${user}. They may have DMs disabled or blocked the bot.`);
+    }
+    return interaction.editReply(`Your message was sent to ${user}.`);
   }
 
   if (interaction.commandName === 'vouch') {

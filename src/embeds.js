@@ -7,6 +7,8 @@ const {
   FileUploadBuilder,
   LabelBuilder,
   ModalBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
   TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -16,6 +18,7 @@ const { orderReference } = require('./order-reference');
 
 const COLORS = { pending: 0x3478c7, claimed: 0xe6a23c, completed: 0x35a16b, cancelled: 0xc94c4c, expired: 0x777777 };
 const LABELS = { pending: 'Waiting', claimed: 'In progress', completed: 'Completed', cancelled: 'Cancelled', expired: 'Expired' };
+const SHOP_ANNOUNCEMENT_ROLE_ID = '1555603985694588940';
 
 function orderContainer(order) {
   const status = order.status === 'completed'
@@ -27,18 +30,99 @@ function orderContainer(order) {
           : order.processingStatus === 'processing' ? 'processing' : 'noted';
   const sourceChannel = order.sourceChannelId ? `<#${order.sourceChannelId}>` : 'Unknown channel';
   const servedBy = order.supporterId ? `<@${order.supporterId}>` : 'Not assigned';
+  const item = order.items ?? order.item;
+  const quantity = order.quantity ?? 1;
   return new ContainerBuilder()
     .setAccentColor(COLORS[order.status])
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
       '_ _',
       ` _ _    🧁   order from ${sourceChannel}`,
-      `  _ _     ⤷   ${order.items ?? order.item}`,
+      `  _ _     ⤷   ${item} (x${quantity})`,
       `   _ _     ⤷   paid via ${order.paymentMethod ?? 'Not specified'}`,
       `    _ _     ⤷   status: __**${status}**__`,
       `     _ _     ⤷   served by ${servedBy}`,
       '     _ _',
     ].join('\n')))
     .addActionRowComponents(orderButtons(order));
+}
+
+function dmsUserContainer(guildName, reply) {
+  return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `## Message from ${guildName}`,
+      reply,
+    ].join('\n\n')));
+}
+
+function openShopContainer() {
+  return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>`,
+      '_ _',
+      ':candy:  **Dolce Vita is now __open__**',
+      '',
+      'we never server rush orders.',
+      'check our pricelist before ordering.',
+      '',
+      '→ [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+      ':suchiarrow: [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+      ':suchiarrow: [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+      ':suchiarrow: [Premmies] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+      ':suchiarrow: [Gamecredits] - Soon (https://discord.com/channels/1555578509743755306/1555826478522835014)',
+    ].join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Order Here')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://discord.com/channels/1555578509743755306/1555625940111855697'),
+    ));
+}
+
+function closeShopContainer() {
+  const blue = '\u001b[1;34m';
+  const red = '\u001b[1;31m';
+  const reset = '\u001b[0m';
+  return new ContainerBuilder()
+    .setAccentColor(0x3478c7)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      `<@&${SHOP_ANNOUNCEMENT_ROLE_ID}>\n\`\`\`ansi\n🔒  Dolce Vita is now ${red}closed${reset}\n\`\`\``,
+    ))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      'Thankyou to everyone who supported Dolce Vita,',
+      'We apppreciate all of you.',
+      '',
+      `\`\`\`ansi\nwe're currently ${red}closed${reset} and not taking\nany new orders\n\`\`\``,
+      '',
+      'if you create a ticket while closed please wait for',
+      'Dolce Vita Staff to open the shop and assist you.',
+    ].join('\n')))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '⟢ please keep an eye on our [Announcement](https://discord.com/channels/1555578509743755306/1555826478522835014) channel for updates on our next opening.',
+    ))
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `\`\`\`ansi\n${blue}𝘄𝗵𝗮𝘁 𝗵𝗮𝗽𝗽𝗲𝗻𝗲𝗱?${reset}\n\`\`\``,
+      "> we're busy/sleeping or at school/work, and improving our services",
+      "> to serve y'all better",
+    ].join('\n')))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      `\`\`\`ansi\n${blue}𝘄𝗵𝗮𝘁 𝗰𝗮𝗻 𝗱𝗼?${reset}\n\`\`\``,
+      '→ [check the pricelist](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+      '→ [check the rules](https://discord.com/channels/1555578509743755306/1556310915643867226)',
+      '→ [inquire channel](https://discord.com/channels/1555578509743755306/1555592238690598943)',
+    ].join('\n')))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      'thank you for patience and understanding. See you soon!!',
+    ))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('Announcement')
+        .setStyle(ButtonStyle.Link)
+        .setURL('https://discord.com/channels/1555578509743755306/1555826478522835014'),
+    ));
 }
 
 function orderStatusEmbed(order) {
@@ -60,7 +144,7 @@ function orderStatusEmbed(order) {
 function warrantyVoidedContainer(order) {
   const user = `<@${order.customerId}>`;
   const userId = String(order.customerId ?? 'unknown');
-  const product = String(order.ticketProduct ?? order.items ?? order.item ?? 'Unknown product');
+  const product = `${order.ticketProduct ?? order.items ?? order.item ?? 'Unknown product'} (x${order.quantity ?? 1})`;
   return new ContainerBuilder()
     .setAccentColor(0xc94c4c)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
@@ -218,15 +302,6 @@ function orderVouchModal(orderId) {
           .setRequired(true)
           .setMaxLength(20)
           .setPlaceholder('DEKOR / GAMECREDITS / ROBUX')),
-      new LabelBuilder()
-        .setLabel('Quantity')
-        .setDescription('1-1000')
-        .setTextInputComponent(new TextInputBuilder()
-          .setCustomId('order-vouch-quantity')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(4)
-          .setPlaceholder('1-1000')),
       new LabelBuilder()
         .setLabel('Feedback')
         .setTextInputComponent(new TextInputBuilder()
@@ -569,6 +644,10 @@ function ticketTranscriptEmbed({
 module.exports = {
   orderButtons,
   orderContainer,
+  SHOP_ANNOUNCEMENT_ROLE_ID,
+  dmsUserContainer,
+  openShopContainer,
+  closeShopContainer,
   orderStatusEmbed,
   warrantyVoidedContainer,
   voidedRoleRemovedContainer,

@@ -131,6 +131,24 @@ module.exports = [
       .setDescription('Channel to post in; defaults to this channel')
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
   new SlashCommandBuilder()
+    .setName('openshop')
+    .setDescription('Post the shop-open announcement.'),
+  new SlashCommandBuilder()
+    .setName('closeshop')
+    .setDescription('Post the shop-closed announcement.'),
+  new SlashCommandBuilder()
+    .setName('dmsuser')
+    .setDescription('Send a private message to a user.')
+    .addUserOption((option) => option
+      .setName('user')
+      .setDescription('User to message')
+      .setRequired(true))
+    .addStringOption((option) => option
+      .setName('reply')
+      .setDescription('Message to send')
+      .setRequired(true)
+      .setMaxLength(2000)),
+  new SlashCommandBuilder()
     .setName('vouch')
     .setDescription('Leave a public vouch.')
     .addStringOption((option) => option
