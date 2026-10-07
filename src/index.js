@@ -16,6 +16,7 @@ const {
   orderContainer,
   SHOP_ANNOUNCEMENT_ROLE_ID,
   dmsUserContainer,
+  messageContainer,
   openShopContainer,
   closeShopContainer,
   orderStatusEmbed,
@@ -1430,9 +1431,8 @@ async function handleCommand(interaction) {
     }
     const text = interaction.options.getString('text', true);
     await channel.send({
-      embeds: [new EmbedBuilder()
-        .setColor(0x3478c7)
-        .setDescription(text)],
+      components: [messageContainer(text)],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
     return interaction.reply({ content: `Message posted in ${channel}.`, ephemeral: true });

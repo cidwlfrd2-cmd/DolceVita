@@ -52,6 +52,11 @@ function dmsUserContainer(guildName, reply) {
     ].join('\n\n')));
 }
 
+function messageContainer(text) {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(text));
+}
+
 function openShopContainer() {
   return new ContainerBuilder()
     .addTextDisplayComponents(new TextDisplayBuilder().setContent([
@@ -614,6 +619,7 @@ module.exports = {
   orderContainer,
   SHOP_ANNOUNCEMENT_ROLE_ID,
   dmsUserContainer,
+  messageContainer,
   openShopContainer,
   closeShopContainer,
   orderStatusEmbed,

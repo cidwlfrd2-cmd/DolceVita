@@ -22,7 +22,7 @@ A Discord bot for submitting orders, showing a public queue, and letting staff c
 - `/payment` lets authorized staff send the payment reminder in an active ticket.
 - `/solving amount_one:<number> amount_two:<number>` multiplies two numbers and displays the result.
 - `,calc <number>*<number>` (for example, `,calc 5*5`) sends the result as `5 x 5 = 25` in a Discord Components V2 container, then deletes the command message. The bot needs the **Manage Messages** permission in that channel. The `/solving` slash command remains available.
-- `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel. Mentions are not triggered.
+- `/message text:<message> channel:<optional>` lets authorized staff post a message as the bot in the current or selected text channel, using a colorless Discord Components V2 container. Mentions are not triggered.
 - `/openshop` posts the shop-open announcement as a Discord Components V2 container in the current channel.
 - `/closeshop` posts the shop-closed announcement as a Discord Components V2 container in the current channel, with red “closed” text and blue bold section headings.
 - `/dmsuser user:@user reply:<message>` lets authorized staff DM a user in a Discord Components V2 container. Mentions in the reply do not trigger notifications.

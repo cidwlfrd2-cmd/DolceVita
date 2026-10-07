@@ -29,6 +29,7 @@ const {
   orderVouchModal,
   SHOP_ANNOUNCEMENT_ROLE_ID,
   dmsUserContainer,
+  messageContainer,
   openShopContainer,
   closeShopContainer,
   orderTicketTermsContainer,
@@ -612,6 +613,13 @@ test('/dmsuser message is formatted as a V2 container', () => {
     command.options.map(({ name, required }) => [name, required]),
     [['user', true], ['reply', true]],
   );
+});
+
+test('/message content is formatted as a colorless V2 container', () => {
+  const container = messageContainer('Announcement text').toJSON();
+  assert.equal(container.type, 17);
+  assert.equal(container.accent_color, undefined);
+  assert.equal(container.components[0].content, 'Announcement text');
 });
 
 test('/openshop posts the supplied announcement in a V2 container', () => {
