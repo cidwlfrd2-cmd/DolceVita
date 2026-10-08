@@ -12,7 +12,7 @@ const {
   ticketCloseConfirmationButtons,
   ticketCloseReasonModal,
   helpEmbed,
-  multiplicationEmbed,
+  multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
   vouchPreviewButtons,
@@ -425,10 +425,12 @@ test('multiplication handles finite numbers and rejects invalid values or overfl
   assert.equal(multiplyExpression('5*x'), null);
 });
 
-test('multiplication result is formatted as an embed', () => {
-  const embed = multiplicationEmbed(multiplyExpression('5*5')).toJSON();
-  assert.equal(embed.title, undefined);
-  assert.equal(embed.description, '**5 x 5 = 25**');
+test('multiplication result is formatted as a colorless V2 container', () => {
+  const container = multiplicationContainer(multiplyExpression('5*5')).toJSON();
+  assert.equal(container.accent_color, undefined);
+  assert.deepEqual(container.components, [
+    { type: 10, content: '**5 x 5 = 25**' },
+  ]);
 });
 
 test('payment reminder embed has the requested description, no title, and server icon thumbnail', () => {
@@ -534,8 +536,12 @@ test('calc shortcut sends the result before deleting the command message', async
     channel: { send: async (payload) => calls.push(['send', payload]) },
     delete: async () => calls.push(['delete']),
   };
-  const resultEmbed = multiplicationEmbed(multiplyAmounts('2', '3'));
-  const payload = { embeds: [resultEmbed], allowedMentions: { parse: [] } };
+  const resultContainer = multiplicationContainer(multiplyAmounts('2', '3'));
+  const payload = {
+    components: [resultContainer],
+    flags: require('discord.js').MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  };
   const deleteError = await sendThenDeleteCommand(message, payload);
   assert.equal(deleteError, null);
   assert.deepEqual(calls, [
@@ -565,6 +571,27 @@ test('ticket category setup slash command takes a category ID and requires admin
   assert.equal(command.options[0].name, 'category_id');
   assert.equal(command.options[0].required, true);
   assert.equal(command.default_member_permissions, '8');
+});
+
+test('voidedchannel slash command is registered with a required channel option', () => {
+  const command = commands.find((entry) => entry.name === 'voidedchannel');
+  assert.ok(command);
+  assert.equal(command.options[0].name, 'channel');
+  assert.equal(command.options[0].required, true);
+});
+
+test('payment and giveaway slash commands expose matching subcommands', () => {
+  const payment = commands.find((entry) => entry.name === 'payment');
+  const giveaway = commands.find((entry) => entry.name === 'giveaway');
+  assert.ok(payment);
+  assert.ok(giveaway);
+  assert.deepEqual(giveaway.options.map((option) => option.name), [
+    'start',
+    'end',
+    'reroll',
+    'ban',
+    'banned',
+  ]);
 });
 
 test('removed per-ticket category slash commands are not registered', () => {

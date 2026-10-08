@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { OrderStore } = require('../src/store');
+const { OrderStore, ORDER_ACTIVE_DURATION_MS } = require('../src/store');
 const { orderButtons, orderContainer, orderStatusEmbed, queueEmbed } = require('../src/embeds');
 const { orderReference } = require('../src/order-reference');
 const { orderStatusLabel } = require('../src/order-status');
@@ -52,6 +52,7 @@ test('orders persist, can be claimed in order, and leave the active queue when f
 });
 
 test('orders remain active until 48 hours and then expire from actions and the queue', () => {
+  assert.equal(ORDER_ACTIVE_DURATION_MS, 48 * 60 * 60 * 1000);
   const store = createStore();
   const order = store.addOrder({
     guildId: 'guild-1',
@@ -287,6 +288,17 @@ test('vouch embed omits warranty text and shows the date in Philippine time', ()
   assert.equal(vouchDateField.value, expected);
 });
 
+test('vouch item details retain an order-ticket quantity', () => {
+  const embed = require('../src/embeds').vouchEmbed(
+    { id: 'user-1' },
+    'SVBOOST (x7)',
+    'Great service',
+    new Date('2026-10-07T00:00:00Z'),
+  ).toJSON();
+
+  assert.equal(embed.fields.find((field) => field.name === '🔹 item').value, 'SVBOOST (x7)');
+});
+
 test('vouches persist and are counted only for the requested user and server', () => {
   const store = createStore();
   store.addVouch({ guildId: 'guild-1', userId: 'user-1', items: 'Latte' });
@@ -298,6 +310,32 @@ test('vouches persist and are counted only for the requested user and server', (
   const vouches = restartedStore.listVouches('guild-1', 'user-1');
   assert.equal(vouches.length, 2);
   assert.deepEqual(vouches.map((vouch) => vouch.items).sort(), ['Latte', 'Tea']);
+});
+
+test('giveaway entries, winners, bans, and tracked message counts persist', () => {
+  const store = createStore();
+  const giveaway = store.createGiveaway({
+    guildId: 'guild-1',
+    channelId: 'channel-1',
+    prize: 'Robux',
+    hostId: 'host-1',
+    winnerCount: 1,
+    endsAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  store.setGiveawayMessage(giveaway.id, 'message-1');
+  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), true);
+  assert.equal(store.addGiveawayEntrant('guild-1', giveaway.id, 'user-1'), false);
+  assert.equal(store.endGiveaway('guild-1', giveaway.id, ['user-1']).status, 'ended');
+  assert.equal(store.addGiveawayReroll('guild-1', giveaway.id, ['user-2']).rerolls.length, 1);
+  assert.equal(store.banFromGiveaways('guild-1', 'user-3', 'admin-1'), true);
+  assert.equal(store.isBannedFromGiveaways('guild-1', 'user-3'), true);
+  assert.equal(store.incrementMessageCount('guild-1', 'channel-1', 'user-1'), 1);
+  assert.equal(store.incrementMessageCount('guild-1', 'channel-1', 'user-1'), 2);
+
+  const restartedStore = new OrderStore(store.filePath);
+  assert.equal(restartedStore.findGiveawayByMessage('guild-1', 'message-1').id, giveaway.id);
+  assert.equal(restartedStore.getMessageCount('guild-1', 'channel-1', 'user-1'), 2);
+  assert.equal(restartedStore.listGiveawayBans('guild-1').length, 1);
 });
 
 test('sticky messages persist per channel and can be replaced or removed', () => {

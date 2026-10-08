@@ -79,10 +79,80 @@ function voidedOrderEmbed(user, product, reason, markedAt = new Date()) {
     .setFooter({ text: `voided by dolce vita - ${date} - ${time}` });
 }
 
-function multiplicationEmbed({ amountOne, amountTwo, product }) {
-  return new EmbedBuilder()
-    .setColor(0x3478c7)
-    .setDescription(`**${amountOne} x ${amountTwo} = ${product}**`);
+function multiplicationContainer({ amountOne, amountTwo, product }) {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`**${amountOne} x ${amountTwo} = ${product}**`),
+    );
+}
+
+function robuxFormContainer() {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '🥞   **RBX FILL UP FORM !**',
+      '',
+      '**username:**',
+      '**display name:**',
+    ].join('\n')));
+}
+
+function openShopContainer() {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '@𓏲﹕     dolcezza',
+      '_ _',
+      ':candy:  **Dolce Vita is now __open__**',
+      '',
+      'we never serve rush orders.',
+      'check our pricelist before ordering.',
+      '',
+      '→  [Daily Stocks](https://discord.com/channels/1555578509743755306/1555578511165493401)',
+      '→  [Robux Via Plus / Gamepass Gift](https://discord.com/channels/1555578509743755306/1555633960523141220)',
+      '→  [Discord Items - Dekor & Sv Boost](https://discord.com/channels/1555578509743755306/1555581838544609430)',
+      '→  [Premmies](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+      '→  [Gamecredits](https://discord.com/channels/1555578509743755306/1555826478522835014) - Soon',
+    ].join('\n')));
+}
+
+function closeShopContainer() {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      '@𓏲﹕     dolcezza',
+      '_ _',
+      '🔴  **Dolce Vita is now __closed__**',
+      '',
+      'Thank you for your support. Please check back later!',
+    ].join('\n')));
+}
+
+function giveawayContainer(giveaway, ended = false) {
+  const endTime = Math.floor(new Date(giveaway.endsAt).getTime() / 1000);
+  const lines = [
+    '🎉 **GIVEAWAY**',
+    '',
+    `**Prize:** ${giveaway.prize}`,
+    `**Host:** <@${giveaway.hostId}>`,
+    ended
+      ? `**Winners:** ${giveaway.winners?.length ? giveaway.winners.map((id) => `<@${id}>`).join(', ') : 'No eligible entrants.'}`
+      : `**Ends:** <t:${endTime}:R>`,
+    `**Entries:** ${giveaway.entrants?.length ?? 0}`,
+  ];
+  if (giveaway.messageCount) {
+    lines.push(`**Message requirement:** ${giveaway.messageCount} messages in <#${giveaway.messageChannelId}>`);
+  }
+  if (giveaway.requirements) lines.push(`**Additional requirements:** ${giveaway.requirements}`);
+  if (giveaway.roleIds?.length) {
+    lines.push(`**Eligible roles:** ${giveaway.roleIds.map((id) => `<@&${id}>`).join(', ')}`);
+  }
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`giveaway:enter:${giveaway.id}`)
+        .setLabel(ended ? 'Giveaway ended' : '🎉 Enter giveaway')
+        .setStyle(ended ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setDisabled(ended),
+    ));
 }
 
 function paymentReminderEmbed(serverIconUrl) {
@@ -438,7 +508,11 @@ module.exports = {
   orderStatusEmbed,
   voidedOrderEmbed,
   orderCompletionReminderEmbed,
-  multiplicationEmbed,
+  multiplicationContainer,
+  robuxFormContainer,
+  openShopContainer,
+  closeShopContainer,
+  giveawayContainer,
   paymentReminderEmbed,
   vouchEmbed,
   paymentDetailsEmbed,

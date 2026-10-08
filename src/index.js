@@ -10,19 +10,23 @@ const {
 } = require('discord.js');
 const { randomUUID } = require('node:crypto');
 const path = require('node:path');
-const { OrderStore } = require('./store');
+const { OrderStore, ORDER_ACTIVE_DURATION_MS } = require('./store');
 const {
   orderButtons,
   orderContainer,
   orderStatusEmbed,
   orderCompletionReminderEmbed,
-  multiplicationEmbed,
+  multiplicationContainer,
   paymentReminderEmbed,
   vouchEmbed,
   vouchPreviewButtons,
   voidedOrderEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
+  robuxFormContainer,
+  openShopContainer,
+  closeShopContainer,
+  giveawayContainer,
   orderTicketModal,
   othersTicketModal,
   helpEmbed,
@@ -39,7 +43,12 @@ const {
 const { createProofCollage } = require('./vouch-proofs');
 const { ticketTranscriptText } = require('./ticket-transcript');
 const { ticketChannelName } = require('./ticket-names');
-const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('./ticket-context');
+const {
+  ticketOwnerId,
+  ticketCustomerId,
+  ticketProduct,
+  ticketQuantity,
+} = require('./ticket-context');
 const { orderReference } = require('./order-reference');
 const { findActiveTicket, withTicketCreationLock } = require('./ticket-creation');
 const {
@@ -53,7 +62,13 @@ const { parseOrderTicketForm } = require('./order-ticket-form');
 const { parseOthersTicketForm } = require('./others-ticket-form');
 const { multiplyAmounts, multiplyExpression } = require('./multiplication');
 const { replyThenDeleteCommand } = require('./message-command-actions');
+const {
+  sendV2,
+  wrapInteractionResponses,
+  wrapMessageResponses,
+} = require('./v2-messages');
 const commands = require('./commands');
+const { parseGiveawayDuration, selectGiveawayWinners } = require('./giveaway-utils');
 
 const store = new OrderStore();
 const client = new Client({
@@ -66,6 +81,8 @@ const client = new Client({
 const stickyRefreshes = new Map();
 const ticketClaimLocks = new Map();
 const scheduledVoidChecks = new Map();
+const scheduledOrderExpirations = new Map();
+const scheduledGiveawayEnds = new Map();
 const pendingTicketClosures = new Map();
 const TICKET_CLOSE_CONFIRMATION_DURATION_MS = 5 * 60 * 1000;
 const pendingVouchPreviews = new Map();
@@ -115,7 +132,7 @@ async function handleVouchPreviewButton(interaction) {
       || typeof channel.send !== 'function') {
       throw new Error(`Vouch channel ${preview.channelId} is unavailable or not a sendable server text channel.`);
     }
-    await channel.send({
+    await sendV2(channel, {
       embeds: [preview.embed],
       files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
       allowedMentions: { parse: [] },
@@ -130,7 +147,7 @@ async function handleVouchPreviewButton(interaction) {
     if (preview.ticketOwnerDmId) {
       try {
         const owner = await client.users.fetch(preview.ticketOwnerDmId);
-        await owner.send({
+        await sendV2(owner, {
           embeds: [preview.embed],
           files: [{ attachment: preview.proofCollage, name: 'vouch-proofs.png' }],
           allowedMentions: { parse: [] },
@@ -141,6 +158,23 @@ async function handleVouchPreviewButton(interaction) {
       }
     }
     discardVouchPreview(previewId);
+    if (preview.ticketChannelId) {
+      try {
+        const ticketChannel = await client.channels.fetch(preview.ticketChannelId);
+        if (ticketChannel && ticketChannel.guildId === preview.guildId
+          && ticketOwnerId(ticketChannel) === preview.userId) {
+          return await closeTicketChannel(interaction, ticketChannel, preview.userId, 'Vouch submitted');
+        }
+      } catch (error) {
+        console.error(`Could not automatically close ticket ${preview.ticketChannelId} after vouch:`, error);
+        return interaction.editReply({
+          content: 'Your vouch was posted, but I could not automatically close the ticket. Please close it manually or contact staff.',
+          embeds: [],
+          components: [],
+          attachments: [],
+        });
+      }
+    }
     await interaction.editReply({
       content: `Your vouch was posted in ${channel}.`
         + (preview.ticketOwnerDmId
@@ -277,7 +311,7 @@ function scheduleVoidCheckForOrder(order) {
       }
       const user = await client.users.fetch(currentOrder.customerId).catch(() => null);
       const embed = voidedOrderEmbed(user ?? { id: currentOrder.customerId, username: `user-${currentOrder.customerId}` }, currentOrder.items ?? currentOrder.item ?? 'Unknown product', 'no vouch within 12hours', new Date());
-      await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+      await sendV2(channel, { embeds: [embed], allowedMentions: { parse: [] } });
       if (settings?.voidedRoleId) {
         const guild = channel.guild;
         const role = await guild.roles.fetch(settings.voidedRoleId).catch(() => null);
@@ -296,12 +330,146 @@ function scheduleVoidCheckForOrder(order) {
   scheduledVoidChecks.set(order.id, timeoutId);
 }
 
+function scheduleOrderExpiration(order) {
+  if (!order || !['pending', 'claimed'].includes(order.status) || scheduledOrderExpirations.has(order.id)) return;
+  const createdAt = new Date(order.createdAt).getTime();
+  if (!Number.isFinite(createdAt)) return;
+  const delay = Math.max(0, createdAt + ORDER_ACTIVE_DURATION_MS - Date.now());
+  const timeoutId = setTimeout(async () => {
+    scheduledOrderExpirations.delete(order.id);
+    try {
+      store.listActive(order.guildId);
+      const currentOrder = store.getOrder(order.id);
+      if (currentOrder?.status === 'expired') await refreshOrderMessage(currentOrder);
+    } catch (error) {
+      console.error(`Could not expire order ${order.id}:`, error);
+    }
+  }, delay);
+  scheduledOrderExpirations.set(order.id, timeoutId);
+}
+
+async function finishGiveaway(guildId, giveawayId) {
+  const giveaway = store.getGiveaway(guildId, giveawayId);
+  if (!giveaway || giveaway.status !== 'active') return null;
+  const winners = selectGiveawayWinners(giveaway.entrants, giveaway.winnerCount);
+  const endedGiveaway = store.endGiveaway(guildId, giveawayId, winners);
+  if (!endedGiveaway) return null;
+  scheduledGiveawayEnds.delete(giveawayId);
+  try {
+    const channel = await client.channels.fetch(endedGiveaway.channelId);
+    if (!channel || channel.guildId !== guildId || !channel.isTextBased()) {
+      throw new Error(`Giveaway channel ${endedGiveaway.channelId} is unavailable.`);
+    }
+    const message = await channel.messages.fetch(endedGiveaway.messageId);
+    await message.edit({
+      components: [giveawayContainer(endedGiveaway, true)],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    });
+    await sendV2(channel, {
+      content: winners.length
+        ? `🎉 Congratulations ${winners.map((id) => `<@${id}>`).join(', ')}! You won **${endedGiveaway.prize}**.`
+        : `The giveaway for **${endedGiveaway.prize}** ended with no eligible entrants.`,
+      allowedMentions: { users: winners },
+    });
+    return endedGiveaway;
+  } catch (error) {
+    console.error(`Could not publish results for giveaway ${giveawayId}:`, error);
+    throw error;
+  }
+}
+
+function scheduleGiveawayEnd(giveaway) {
+  if (!giveaway || giveaway.status !== 'active' || scheduledGiveawayEnds.has(giveaway.id)) return;
+  const delay = Math.max(0, new Date(giveaway.endsAt).getTime() - Date.now());
+  const timeoutId = setTimeout(() => {
+    scheduledGiveawayEnds.delete(giveaway.id);
+    if (Date.now() < new Date(giveaway.endsAt).getTime()) {
+      scheduleGiveawayEnd(giveaway);
+      return;
+    }
+    finishGiveaway(giveaway.guildId, giveaway.id).catch((error) => {
+      console.error(`Could not automatically end giveaway ${giveaway.id}:`, error);
+    });
+  }, Math.min(delay, 2_147_000_000));
+  scheduledGiveawayEnds.set(giveaway.id, timeoutId);
+}
+
+function canManageGiveaways(interaction) {
+  const settings = store.getSettings(interaction.guildId);
+  const managerRoleIds = [settings?.adminRoleId, settings?.ownerRoleId].filter(Boolean);
+  return managerRoleIds.length
+    ? managerRoleIds.some((roleId) => memberHasRole(interaction, roleId))
+      || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
+    : isStaff(interaction);
+}
+
+async function handleGiveawayButton(interaction) {
+  const [, action, giveawayId] = interaction.customId.split(':');
+  if (action !== 'enter') {
+    return interaction.reply({ content: 'This giveaway action is not valid.', ephemeral: true });
+  }
+  const giveaway = store.getGiveaway(interaction.guildId, giveawayId);
+  if (!giveaway || giveaway.status !== 'active') {
+    return interaction.reply({ content: 'This giveaway has ended or is unavailable.', ephemeral: true });
+  }
+  if (store.isBannedFromGiveaways(interaction.guildId, interaction.user.id)) {
+    return interaction.reply({ content: 'You are not allowed to enter giveaways in this server.', ephemeral: true });
+  }
+  if (giveaway.roleIds?.length
+    && !giveaway.roleIds.some((roleId) => memberHasRole(interaction, roleId))) {
+    return interaction.reply({ content: 'You do not have an eligible role to enter this giveaway.', ephemeral: true });
+  }
+  if (giveaway.messageCount
+    && store.getMessageCount(interaction.guildId, giveaway.messageChannelId, interaction.user.id) < giveaway.messageCount) {
+    return interaction.reply({
+      content: `You need at least ${giveaway.messageCount} tracked messages in <#${giveaway.messageChannelId}> to enter.`,
+      ephemeral: true,
+    });
+  }
+  if (!store.addGiveawayEntrant(interaction.guildId, giveawayId, interaction.user.id)) {
+    return interaction.reply({ content: 'You have already entered this giveaway.', ephemeral: true });
+  }
+  const updatedGiveaway = store.getGiveaway(interaction.guildId, giveawayId);
+  await interaction.message.edit({
+    components: [giveawayContainer(updatedGiveaway)],
+    flags: MessageFlags.IsComponentsV2,
+    allowedMentions: { parse: [] },
+  });
+  return interaction.reply({ content: 'You entered the giveaway!', ephemeral: true });
+}
+
 async function restoreScheduledVoidChecks() {
   const state = store.read();
   for (const order of state.orders ?? []) {
     if (order.status === 'completed' && !order.voidedAt) {
       scheduleVoidCheckForOrder(order);
     }
+  }
+}
+
+async function restoreScheduledOrderExpirations() {
+  const initialState = store.read();
+  for (const guildId of new Set((initialState.orders ?? []).map((order) => order.guildId))) {
+    store.listActive(guildId);
+  }
+  const state = store.read();
+  for (const order of state.orders ?? []) {
+    if (['pending', 'claimed'].includes(order.status)) {
+      scheduleOrderExpiration(order);
+    } else if (order.status === 'expired') {
+      try {
+        await refreshOrderMessage(order);
+      } catch (error) {
+        console.error(`Could not refresh expired order ${order.id}:`, error);
+      }
+    }
+  }
+}
+
+async function restoreScheduledGiveaways() {
+  for (const giveaway of store.listActiveGiveaways()) {
+    scheduleGiveawayEnd(giveaway);
   }
 }
 
@@ -326,7 +494,7 @@ async function postTicketPanel(channel) {
   if (!channel?.isTextBased() || typeof channel.send !== 'function') {
     throw new Error('The ticket panel must be posted in a sendable text channel.');
   }
-  return channel.send({
+  return sendV2(channel, {
     components: [ticketPanelButtons()],
   });
 }
@@ -386,9 +554,17 @@ async function requestTicketClosure(interaction, channel, ownerId, source) {
 async function closeTicketChannel(interaction, channel, ownerId, reason) {
   const settings = store.getSettings(interaction.guildId);
   if (!settings?.ticketTranscriptChannelId) {
-    return interaction.reply({ content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.', ephemeral: true });
+    const response = {
+      content: 'Ticket transcripts are not configured. Ask an administrator to run `/set ticket_transcript channel:#channel` before closing tickets.',
+      ephemeral: true,
+    };
+    return interaction.deferred || interaction.replied
+      ? interaction.editReply(response)
+      : interaction.reply(response);
   }
-  await interaction.deferReply({ ephemeral: true });
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ ephemeral: true });
+  }
   const transcriptChannel = await client.channels.fetch(settings.ticketTranscriptChannelId);
   if (!transcriptChannel?.isTextBased() || typeof transcriptChannel.send !== 'function') {
     throw new Error(`Configured transcript channel ${settings.ticketTranscriptChannelId} is not a sendable text channel.`);
@@ -408,7 +584,7 @@ async function closeTicketChannel(interaction, channel, ownerId, reason) {
     attachment: Buffer.from(transcript || 'No messages in this ticket.', 'utf8'),
     name: `${channel.name.replace(/[^a-z0-9-]/gi, '-')}-transcript.txt`,
   };
-  await transcriptChannel.send({
+  await sendV2(transcriptChannel, {
     embeds: [transcriptEmbed],
     files: [transcriptFile],
     allowedMentions: { parse: [] },
@@ -416,7 +592,7 @@ async function closeTicketChannel(interaction, channel, ownerId, reason) {
   let ownerNotified = true;
   try {
     const owner = await client.users.fetch(ownerId);
-    await owner.send({
+    await sendV2(owner, {
       embeds: [transcriptEmbed],
       files: [transcriptFile],
       allowedMentions: { parse: [] },
@@ -477,7 +653,7 @@ async function refreshStickyMessage(message) {
     const stickyMessage = store.getStickyMessage(guildId, channelId);
     if (!stickyMessage) return;
     await deleteStickyPost(message.channel, stickyMessage.messageId);
-    const postedMessage = await message.channel.send({
+    const postedMessage = await sendV2(message.channel, {
       content: stickyMessage.content,
       allowedMentions: { parse: [] },
     });
@@ -586,7 +762,7 @@ async function createTicketChannel(interaction, type, orderForm, reportForm, oth
       permissionOverwrites,
       reason: `${type} ticket opened by ${interaction.user.tag}`,
     });
-    await channel.send({
+    await sendV2(channel, {
       ...ticketManagerMentionPayload(settings),
       embeds: [ticketEmbed(type, interaction.user, orderForm, reportForm, othersForm)],
       components: [ticketButtons()],
@@ -734,6 +910,18 @@ async function handleCommand(interaction) {
     return interaction.reply({ content: `New orders will be posted in ${channel}.`, ephemeral: true });
   }
 
+  if (interaction.commandName === 'voidedchannel') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'Only server administrators can configure the voided channel.', ephemeral: true });
+    }
+    const channel = interaction.options.getChannel('channel', true);
+    if (!channel.isTextBased() || typeof channel.send !== 'function' || channel.guildId !== interaction.guildId) {
+      return interaction.reply({ content: 'Choose a text channel in this server.', ephemeral: true });
+    }
+    store.setSettings(interaction.guildId, { voidedChannelId: channel.id });
+    return interaction.reply({ content: `Voided-order alerts will be posted in ${channel}.`, ephemeral: true });
+  }
+
   if (interaction.commandName === 'order') {
     if (!isOrderStaff(interaction)) {
       return interaction.reply({ content: 'Only staff can submit orders.', ephemeral: true });
@@ -759,12 +947,13 @@ async function handleCommand(interaction) {
       ticketProduct: await ticketProduct(interaction.channel),
     });
     const channel = await client.channels.fetch(orderChannelId);
-    const message = await channel.send({
+    const message = await sendV2(channel, {
       components: [orderContainer(order)],
       flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
     store.setOrderMessage(order.id, channel.id, message.id);
+    scheduleOrderExpiration(store.getOrder(order.id));
     return interaction.editReply(`Order #${orderReference(order)} was added to ${channel}.`);
   }
 
@@ -784,7 +973,8 @@ async function handleCommand(interaction) {
       return interaction.reply({ content: 'The result is too large to calculate.', ephemeral: true });
     }
     return interaction.reply({
-      embeds: [multiplicationEmbed(result)],
+      components: [multiplicationContainer(result)],
+      flags: MessageFlags.IsComponentsV2,
       allowedMentions: { parse: [] },
     });
   }
@@ -803,6 +993,132 @@ async function handleCommand(interaction) {
     return interaction.reply({ content: `You claimed order #${orderReference(order)}: **${order.items ?? order.item}** × ${order.quantity}.`, ephemeral: true });
   }
 
+  if (interaction.commandName === 'payment') {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'Only authorized staff can send payment reminders.', ephemeral: true });
+    }
+    if (!ticketOwnerId(interaction.channel)) {
+      return interaction.reply({ content: 'Run `/payment` inside an active ticket.', ephemeral: true });
+    }
+    await sendV2(interaction.channel, {
+      embeds: [paymentReminderEmbed(interaction.guild?.iconURL())],
+      components: [paymentReminderButtons()],
+      allowedMentions: { parse: [] },
+    });
+    return interaction.reply({ content: 'Payment reminder sent in this ticket.', ephemeral: true });
+  }
+
+  if (interaction.commandName === 'giveaway') {
+    if (!canManageGiveaways(interaction)) {
+      return interaction.reply({ content: 'Only the configured `/setadmin` or `/setowner` roles can manage giveaways.', ephemeral: true });
+    }
+    const subcommand = interaction.options.getSubcommand();
+    if (subcommand === 'start') {
+      const durationText = interaction.options.getString('duration', true);
+      const durationMs = parseGiveawayDuration(durationText);
+      if (!durationMs) {
+        return interaction.reply({ content: 'Enter a valid giveaway duration from 1 second to 365 days, such as `30m`, `12h`, or `7d`.', ephemeral: true });
+      }
+      const channel = interaction.channel;
+      if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+        return interaction.reply({ content: 'Run `/giveaway start` in a sendable server text channel.', ephemeral: true });
+      }
+      const messageCount = interaction.options.getInteger('message_count');
+      const requestedMessageChannel = interaction.options.getChannel('message_channel');
+      const messageChannel = requestedMessageChannel ?? channel;
+      if (messageCount && (!messageChannel.isTextBased() || messageChannel.guildId !== interaction.guildId)) {
+        return interaction.reply({ content: 'Choose a tracked message channel in this server.', ephemeral: true });
+      }
+      const requirements = interaction.options.getString('messagerequirements')?.trim() || null;
+      const roleText = interaction.options.getString('override_req_roles');
+      let roleIds = [];
+      if (roleText) {
+        roleIds = [...new Set(roleText.match(/\d{17,20}/g) ?? [])];
+        if (!roleIds.length || roleIds.length > 10) {
+          return interaction.reply({ content: 'Enter 1 to 10 valid role mentions or IDs for the role requirement.', ephemeral: true });
+        }
+        const missingRoleIds = [];
+        for (const roleId of roleIds) {
+          if (!await interaction.guild.roles.fetch(roleId).catch(() => null)) missingRoleIds.push(roleId);
+        }
+        if (missingRoleIds.length) {
+          return interaction.reply({ content: `These roles are not in this server: ${missingRoleIds.map((id) => `<@&${id}>`).join(', ')}.`, ephemeral: true });
+        }
+      }
+      await interaction.deferReply({ ephemeral: true });
+      const giveaway = store.createGiveaway({
+        guildId: interaction.guildId,
+        channelId: channel.id,
+        prize: interaction.options.getString('prize', true).trim(),
+        hostId: interaction.options.getUser('host', true).id,
+        winnerCount: interaction.options.getInteger('winners', true),
+        endsAt: new Date(Date.now() + durationMs).toISOString(),
+        messageCount: messageCount ?? null,
+        messageChannelId: messageCount ? messageChannel.id : null,
+        requirements,
+        roleIds,
+      });
+      try {
+        const message = await sendV2(channel, {
+          components: [giveawayContainer(giveaway)],
+          flags: MessageFlags.IsComponentsV2,
+          allowedMentions: { parse: [] },
+        });
+        store.setGiveawayMessage(giveaway.id, message.id);
+        scheduleGiveawayEnd(giveaway);
+      } catch (error) {
+        store.deleteGiveaway(giveaway.id);
+        throw error;
+      }
+      return interaction.editReply({ content: `Giveaway started in ${channel}.` });
+    }
+
+    if (subcommand === 'end' || subcommand === 'reroll') {
+      const messageId = interaction.options.getString('message_id', true);
+      const giveaway = store.findGiveawayByMessage(interaction.guildId, messageId);
+      if (!giveaway) {
+        return interaction.reply({ content: 'I could not find a giveaway with that message ID in this server.', ephemeral: true });
+      }
+      await interaction.deferReply({ ephemeral: true });
+      if (subcommand === 'end') {
+        const ended = await finishGiveaway(interaction.guildId, giveaway.id);
+        if (!ended) return interaction.editReply({ content: 'That giveaway has already ended.' });
+        return interaction.editReply({ content: `Giveaway ended in <#${ended.channelId}>.` });
+      }
+      if (giveaway.status !== 'ended') {
+        return interaction.editReply({ content: 'End the giveaway before rerolling its winners.' });
+      }
+      const previousWinners = [
+        ...giveaway.winners,
+        ...(giveaway.rerolls ?? []).flatMap((reroll) => reroll.winners),
+      ];
+      const winners = selectGiveawayWinners(giveaway.entrants, giveaway.winnerCount, previousWinners);
+      const updated = store.addGiveawayReroll(interaction.guildId, giveaway.id, winners);
+      const channel = await client.channels.fetch(updated.channelId);
+      await sendV2(channel, {
+        content: winners.length
+          ? `🎉 New winner${winners.length === 1 ? '' : 's'} for **${updated.prize}**: ${winners.map((id) => `<@${id}>`).join(', ')}!`
+          : `No eligible entrants remain to reroll **${updated.prize}**.`,
+        allowedMentions: { users: winners },
+      });
+      return interaction.editReply({ content: 'Giveaway winners rerolled.' });
+    }
+
+    if (subcommand === 'ban') {
+      const user = interaction.options.getUser('user', true);
+      const added = store.banFromGiveaways(interaction.guildId, user.id, interaction.user.id);
+      return interaction.reply({ content: added ? `${user} is now banned from giveaways.` : `${user} was already banned from giveaways.`, ephemeral: true });
+    }
+    if (subcommand === 'banned') {
+      const bans = store.listGiveawayBans(interaction.guildId);
+      const listing = bans.length
+        ? bans.map(({ userId }) => `<@${userId}>`).join('\n')
+        : 'No users are banned from giveaways.';
+      return interaction.reply({ content: `**Giveaway bans (${bans.length})**\n${listing}`, ephemeral: true });
+    }
+    return interaction.reply({ content: 'This giveaway action is not supported.', ephemeral: true });
+  }
+
   if (interaction.commandName === 'message') {
     if (!isStaff(interaction)) {
       return interaction.reply({ content: 'You do not have permission to post messages as the bot.', ephemeral: true });
@@ -812,13 +1128,44 @@ async function handleCommand(interaction) {
       return interaction.reply({ content: 'Choose a text channel where the bot can send messages.', ephemeral: true });
     }
     const text = interaction.options.getString('text', true);
-    await channel.send({
-      embeds: [new EmbedBuilder()
-        .setColor(0x3478c7)
-        .setDescription(text)],
+    await sendV2(channel, {
+      content: text,
       allowedMentions: { parse: [] },
     });
     return interaction.reply({ content: `Message posted in ${channel}.`, ephemeral: true });
+  }
+
+  if (interaction.commandName === 'dmsuser') {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'You do not have permission to send messages as the bot.', ephemeral: true });
+    }
+    const user = interaction.options.getUser('user', true);
+    const text = interaction.options.getString('reply', true);
+    await interaction.deferReply({ ephemeral: true });
+    await sendV2(user, { content: text, allowedMentions: { parse: [] } });
+    return interaction.editReply({ content: `Message sent to ${user}.` });
+  }
+
+  if (['robuxform', 'openshop', 'closeshop'].includes(interaction.commandName)) {
+    if (!isStaff(interaction)) {
+      return interaction.reply({ content: 'You do not have permission to post shop messages.', ephemeral: true });
+    }
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || typeof channel.send !== 'function') {
+      return interaction.reply({ content: 'Run this command in a server text channel.', ephemeral: true });
+    }
+    const container = interaction.commandName === 'robuxform'
+      ? robuxFormContainer()
+      : interaction.commandName === 'openshop'
+        ? openShopContainer()
+        : closeShopContainer();
+    await interaction.deferReply({ ephemeral: true });
+    await sendV2(channel, {
+      components: [container],
+      flags: MessageFlags.IsComponentsV2,
+      allowedMentions: { parse: [] },
+    });
+    return interaction.editReply({ content: `Posted the ${interaction.commandName === 'robuxform' ? 'Robux fill-up form' : `shop ${interaction.commandName === 'openshop' ? 'open' : 'closed'} announcement`}.` });
   }
 
   if (interaction.commandName === 'vouch') {
@@ -826,12 +1173,12 @@ async function handleCommand(interaction) {
     if (!settings?.vouchChannelId) {
       return interaction.reply({ content: 'The vouch channel has not been set. Ask an administrator to run `/set vouch channel:#channel`.', ephemeral: true });
     }
-    const items = interaction.options.getString('items', true).trim();
+    const submittedItems = interaction.options.getString('items', true).trim();
     const feedback = interaction.options.getString('feedback', true).trim();
     const proofs = ['proof', 'proof2']
       .map((name) => interaction.options.getAttachment(name))
       .filter(Boolean);
-    if (!items || !feedback) {
+    if (!submittedItems || !feedback) {
       return interaction.reply({ content: 'Items and feedback cannot be blank.', ephemeral: true });
     }
     if (proofs.length < 1) {
@@ -866,6 +1213,8 @@ async function handleCommand(interaction) {
       console.error('Could not create vouch proof collage:', error);
       return interaction.editReply('Could not process the proof images. Please try valid, smaller image files.');
     }
+    const quantity = await ticketQuantity(interaction.channel);
+    const items = quantity === null ? submittedItems : `${submittedItems} (x${quantity})`;
     const vouchedAt = new Date();
     const embed = vouchEmbed(interaction.user, items, feedback, vouchedAt);
     embed.setImage('attachment://vouch-proofs.png');
@@ -876,6 +1225,9 @@ async function handleCommand(interaction) {
       guildId: interaction.guildId,
       userId: interaction.user.id,
       channelId: channel.id,
+      ticketChannelId: ticketOwnerId(interaction.channel) === interaction.user.id
+        ? interaction.channel.id
+        : null,
       items,
       vouchedAt,
       ticketOwnerDmId: ticketOwnerId(interaction.channel) === interaction.user.id
@@ -938,7 +1290,7 @@ async function handleCommand(interaction) {
 
     if (subcommand === 'set') {
       const content = interaction.options.getString('text', true);
-      const postedMessage = await channel.send({ content, allowedMentions: { parse: [] } });
+      const postedMessage = await sendV2(channel, { content, allowedMentions: { parse: [] } });
       const previousSticky = store.setStickyMessage(interaction.guildId, channel.id, content, postedMessage.id);
       if (previousSticky?.messageId) {
         try {
@@ -957,6 +1309,10 @@ async function handleCommand(interaction) {
     await deleteStickyPost(channel, stickyMessage.messageId);
     return interaction.reply({ content: `Sticky message removed from ${channel}.`, ephemeral: true });
   }
+  return interaction.reply({
+    content: `The /${interaction.commandName} command is not implemented. Please contact an administrator.`,
+    ephemeral: true,
+  });
 }
 
 async function handleTicketButton(interaction) {
@@ -1146,12 +1502,12 @@ async function handleButton(interaction) {
         || typeof sourceChannel.send !== 'function') {
         throw new Error(`Order source channel ${order.sourceChannelId} is unavailable or not a sendable server text channel.`);
       }
-      await sourceChannel.send({
+      await sendV2(sourceChannel, {
         embeds: [statusEmbed],
         allowedMentions: { parse: [] },
       });
       if (completionReminderEmbed) {
-        await sourceChannel.send({
+        await sendV2(sourceChannel, {
           embeds: [completionReminderEmbed],
           allowedMentions: { parse: [] },
         });
@@ -1163,9 +1519,9 @@ async function handleButton(interaction) {
   }
   try {
     const customer = await client.users.fetch(order.customerId);
-    await customer.send({ embeds: [statusEmbed], allowedMentions: { parse: [] } });
+    await sendV2(customer, { embeds: [statusEmbed], allowedMentions: { parse: [] } });
     if (completionReminderEmbed) {
-      await customer.send({ embeds: [completionReminderEmbed], allowedMentions: { parse: [] } });
+      await sendV2(customer, { embeds: [completionReminderEmbed], allowedMentions: { parse: [] } });
     }
   } catch (error) {
     console.error(`Could not DM order status update for order ${order.id} to customer ${order.customerId}:`, error);
@@ -1207,12 +1563,16 @@ async function handlePaymentButton(interaction) {
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await restoreScheduledVoidChecks();
+  await restoreScheduledOrderExpirations();
+  await restoreScheduledGiveaways();
 });
 
 client.on('interactionCreate', async (interaction) => {
+  wrapInteractionResponses(interaction);
   try {
     if (interaction.isChatInputCommand()) await handleCommand(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('vouch-preview:')) await handleVouchPreviewButton(interaction);
+    else if (interaction.isButton() && interaction.customId.startsWith('giveaway:')) await handleGiveawayButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket-close:')) await handleTicketCloseConfirmation(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('ticket:')) await handleTicketButton(interaction);
     else if (interaction.isButton() && interaction.customId.startsWith('order:')) await handleButton(interaction);
@@ -1236,12 +1596,16 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('messageCreate', async (message) => {
+  wrapMessageResponses(message);
   const messageCommand = !message.author.bot && message.guild
     ? parseTicketMessageCommand(message.content)
     : null;
   try {
+    if (message.guild && !message.author.bot) {
+      store.incrementMessageCount(message.guild.id, message.channel.id, message.author.id);
+    }
     if (messageCommand?.name === 'help') {
-      await message.channel.send({
+      await sendV2(message.channel, {
         embeds: [helpEmbed(commands)],
         allowedMentions: { parse: [] },
       });
@@ -1257,7 +1621,7 @@ client.on('messageCreate', async (message) => {
         await message.reply('Only the ticket creator can use `,payment` in this ticket.');
         return;
       }
-      await message.channel.send({
+      await sendV2(message.channel, {
         embeds: [paymentReminderEmbed(message.guild.iconURL())],
         components: [paymentReminderButtons()],
         allowedMentions: { parse: [] },
@@ -1275,13 +1639,14 @@ client.on('messageCreate', async (message) => {
       const deleteError = await replyThenDeleteCommand(
         message,
         {
-          embeds: [multiplicationEmbed(result)],
+          components: [multiplicationContainer(result)],
+          flags: MessageFlags.IsComponentsV2,
           allowedMentions: { parse: [] },
         },
       );
       if (deleteError) {
         console.error(`Could not delete calc command message ${message.id}:`, deleteError);
-        await message.channel.send('I solved the calculation, but could not delete your command. Please check that I have the Manage Messages permission.');
+        await sendV2(message.channel, 'I solved the calculation, but could not delete your command. Please check that I have the Manage Messages permission.');
       }
       return;
     }

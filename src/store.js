@@ -358,4 +358,4 @@ class OrderStore {
   }
 }
 
-module.exports = { OrderStore, VOUCH_WINDOW_MS };
+module.exports = { OrderStore, ORDER_ACTIVE_DURATION_MS, VOUCH_WINDOW_MS };
