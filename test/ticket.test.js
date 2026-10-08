@@ -18,11 +18,19 @@ const {
   vouchPreviewButtons,
   paymentDetailsEmbed,
   paymentReminderButtons,
+  orderTicketTermsContainer,
+  vouchLinkButton,
   orderCompletionReminderEmbed,
 } = require('../src/embeds');
 const commands = require('../src/commands');
 const { ticketChannelName } = require('../src/ticket-names');
-const { ticketOwnerId, ticketCustomerId, ticketProduct } = require('../src/ticket-context');
+const {
+  ticketOwnerId,
+  ticketTermsRequired,
+  ticketTermsAccepted,
+  ticketCustomerId,
+  ticketProduct,
+} = require('../src/ticket-context');
 const { findActiveTicket, withTicketCreationLock } = require('../src/ticket-creation');
 const { ticketTranscriptText } = require('../src/ticket-transcript');
 const { parseTicketMessageCommand } = require('../src/ticket-message-commands');
@@ -311,6 +319,28 @@ test('orders in tickets use the ticket owner as the customer', () => {
   assert.equal(ticketCustomerId({ topic: null }, '987654321098765432'), '987654321098765432');
 });
 
+test('order ticket terms container shows the terms and can be marked accepted', () => {
+  const terms = orderTicketTermsContainer().toJSON();
+  assert.equal(terms.type, 17);
+  assert.match(terms.components[0].content, /dolce vita's terms of service/);
+  assert.match(terms.components[0].content, /final and non-refundable/);
+  assert.equal(terms.components[1].components[0].type, 2);
+  assert.equal(terms.components[1].components[0].style, 3);
+  assert.equal(terms.components[1].components[0].label, 'I agree to the terms');
+  assert.equal(terms.components[1].components[0].custom_id, 'ticket:terms-agree');
+
+  const accepted = orderTicketTermsContainer(true).toJSON();
+  assert.equal(accepted.components[1].components[0].label, 'Terms accepted');
+  assert.equal(accepted.components[1].components[0].disabled, true);
+});
+
+test('ticket terms status comes from order-ticket channel topic markers', () => {
+  assert.equal(ticketTermsRequired({ topic: 'ticket-owner:123;ticket-type:order;ticket-terms-required' }), true);
+  assert.equal(ticketTermsAccepted({ topic: 'ticket-owner:123;ticket-type:order;ticket-terms-required;ticket-terms-accepted' }), true);
+  assert.equal(ticketTermsRequired({ topic: 'ticket-owner:123;ticket-type:report' }), false);
+  assert.equal(ticketTermsAccepted({ topic: 'ticket-owner:123;ticket-type:order;ticket-terms-required' }), false);
+});
+
 test('order ticket product comes from the topic or the original ticket embed', async () => {
   assert.equal(await ticketProduct({
     topic: 'ticket-owner:123;ticket-type:order;ticket-product:GAMECREDITS',
@@ -478,7 +508,15 @@ test('completed order reminder embed has no title and the warranty policy descri
     '› Replacements will only be provided for verified issues covered by warranty.',
     '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
     '› NO VOUCH = no refund, no replacement & no warranty.',
+    '› TYPE /vouch TO VOUCH DOLCE VITA.',
   ].join('\n'));
+});
+
+test('completion DM vouch button links to the configured vouch channel', () => {
+  const button = vouchLinkButton('guild-123', 'channel-456').toJSON().components[0];
+  assert.equal(button.label, 'Vouch now');
+  assert.equal(button.style, 5);
+  assert.equal(button.url, 'https://discord.com/channels/guild-123/channel-456');
 });
 
 test('removed order and voided-role message shortcuts are not recognized', () => {

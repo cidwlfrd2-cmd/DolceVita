@@ -40,6 +40,34 @@ function orderContainer(order) {
     .addActionRowComponents(orderButtons(order));
 }
 
+function orderTicketTermsContainer(accepted = false) {
+  return new ContainerBuilder()
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      "🧁 𔘓 ֹ **dolce vita's terms of service** 𓂅 ̼",
+      'all sweeties bought are final and non-refundable.',
+      '◞◟　𓎟𓎟　 ✦　　𓎟𓎟　　◞◟　𓎟𓎟',
+      '» Force refunds are not accepted.',
+      '» No cancellation or requesting refunds when order status is processing.',
+    ].join('\n')))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('ticket:terms-agree')
+        .setLabel(accepted ? 'Terms accepted' : 'I agree to the terms')
+        .setStyle(accepted ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setDisabled(accepted),
+    ));
+}
+
+function vouchLinkButton(guildId, channelId) {
+  const url = channelId
+    ? `https://discord.com/channels/${guildId}/${channelId}`
+    : `https://discord.com/channels/${guildId}`;
+  return new ActionRowBuilder().addComponents(new ButtonBuilder()
+    .setLabel('Vouch now')
+    .setStyle(ButtonStyle.Link)
+    .setURL(url));
+}
+
 function orderStatusEmbed(order) {
   const status = orderStatusLabel(order);
   const colors = { Processing: 0x3478c7, Complete: 0x35a16b, Cancelled: 0xc94c4c };
@@ -193,6 +221,7 @@ function orderCompletionReminderEmbed() {
       '› Replacements will only be provided for verified issues covered by warranty.',
       '› Once the warranty expires, the shop is no longer responsible for issues covered by the expired warranty.',
       '› NO VOUCH = no refund, no replacement & no warranty.',
+      '› TYPE /vouch TO VOUCH DOLCE VITA.',
     ].join('\n'));
 }
 
@@ -517,6 +546,8 @@ module.exports = {
   vouchEmbed,
   paymentDetailsEmbed,
   paymentReminderButtons,
+  orderTicketTermsContainer,
+  vouchLinkButton,
   vouchPreviewButtons,
   orderTicketModal,
   othersTicketModal,
